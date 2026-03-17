@@ -14,30 +14,89 @@ type RevealControlsPanelProps = {
   controls: RevealControls;
   isCollapsed: boolean;
   iconFileInputKey: number;
+  badgeIconFileInputKey: number;
   uploadedIconName: string;
   uploadedIconUrl: string | null;
+  uploadedBadgeIconName: string;
+  uploadedBadgeIconUrl: string | null;
   onToggleCollapsed: () => void;
   onRequestCollapse: () => void;
   onTextChange: (key: TextControlKey, value: string) => void;
   onRangeChange: (key: RangeControlKey, value: number) => void;
   onColorChange: (key: ColorControlKey, value: string) => void;
   onIconFileChange: (file?: File) => void;
+  onBadgeIconFileChange: (file?: File) => void;
   onClearUploadedIcon: () => void;
+  onClearUploadedBadgeIcon: () => void;
 };
+
+type UploadFieldProps = {
+  label: string;
+  inputKey: number;
+  uploadedName: string;
+  uploadedUrl: string | null;
+  onFileChange: (file?: File) => void;
+  onClear: () => void;
+};
+
+const UploadField = memo(function UploadField({
+  label,
+  inputKey,
+  uploadedName,
+  uploadedUrl,
+  onFileChange,
+  onClear,
+}: UploadFieldProps) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-white/3 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className={panelStyles.label}>{label}</span>
+        {uploadedUrl ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded-[0.65rem] border border-white/10 bg-white/4 px-2.5 py-1 text-[0.72rem] font-semibold text-white/62 transition hover:border-white/16 hover:text-white/86"
+          >
+            Clear File
+          </button>
+        ) : (
+          <span className="text-[0.72rem] font-semibold text-white/36">
+            Uploaded file takes priority
+          </span>
+        )}
+      </div>
+      <input
+        key={inputKey}
+        className={`${panelStyles.fileInput} mt-2.5`}
+        type="file"
+        accept="image/*"
+        onChange={(event) => onFileChange(event.target.files?.[0])}
+      />
+      <p className="mt-2 text-[0.76rem] font-medium text-white/38">
+        {uploadedName || "No file selected. Using the URL above."}
+      </p>
+    </div>
+  );
+});
 
 export const RevealControlsPanel = memo(function RevealControlsPanel({
   controls,
   isCollapsed,
   iconFileInputKey,
+  badgeIconFileInputKey,
   uploadedIconName,
   uploadedIconUrl,
+  uploadedBadgeIconName,
+  uploadedBadgeIconUrl,
   onToggleCollapsed,
   onRequestCollapse,
   onTextChange,
   onRangeChange,
   onColorChange,
   onIconFileChange,
+  onBadgeIconFileChange,
   onClearUploadedIcon,
+  onClearUploadedBadgeIcon,
 }: RevealControlsPanelProps) {
   const panelRef = useRef<HTMLElement | null>(null);
   const handleOutsidePointerDown = useEffectEvent((event: PointerEvent) => {
@@ -185,34 +244,14 @@ export const RevealControlsPanel = memo(function RevealControlsPanel({
             />
           </label>
 
-          <div className="rounded-2xl border border-white/8 bg-white/3 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className={panelStyles.label}>Icon File</span>
-              {uploadedIconUrl ? (
-                <button
-                  type="button"
-                  onClick={onClearUploadedIcon}
-                  className="rounded-[0.65rem] border border-white/10 bg-white/4 px-2.5 py-1 text-[0.72rem] font-semibold text-white/62 transition hover:border-white/16 hover:text-white/86"
-                >
-                  Clear File
-                </button>
-              ) : (
-                <span className="text-[0.72rem] font-semibold text-white/36">
-                  Uploaded file takes priority
-                </span>
-              )}
-            </div>
-            <input
-              key={iconFileInputKey}
-              className={`${panelStyles.fileInput} mt-2.5`}
-              type="file"
-              accept="image/*"
-              onChange={(event) => onIconFileChange(event.target.files?.[0])}
-            />
-            <p className="mt-2 text-[0.76rem] font-medium text-white/38">
-              {uploadedIconName || "No file selected. Using the URL above."}
-            </p>
-          </div>
+          <UploadField
+            label="Icon File"
+            inputKey={iconFileInputKey}
+            uploadedName={uploadedIconName}
+            uploadedUrl={uploadedIconUrl}
+            onFileChange={onIconFileChange}
+            onClear={onClearUploadedIcon}
+          />
 
           <label className="block">
             <span className={panelStyles.label}>Badge Prefix</span>
@@ -254,6 +293,15 @@ export const RevealControlsPanel = memo(function RevealControlsPanel({
               />
             </label>
           </div>
+
+          <UploadField
+            label="Badge Icon File"
+            inputKey={badgeIconFileInputKey}
+            uploadedName={uploadedBadgeIconName}
+            uploadedUrl={uploadedBadgeIconUrl}
+            onFileChange={onBadgeIconFileChange}
+            onClear={onClearUploadedBadgeIcon}
+          />
 
           <div className="rounded-2xl border border-white/8 bg-white/3 p-3">
             <div className="flex items-center justify-between gap-3">

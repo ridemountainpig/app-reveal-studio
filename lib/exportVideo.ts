@@ -44,6 +44,7 @@ const captureFrame = async (
 export async function generateVideo(
   captureNode: HTMLElement,
   durationMs: number,
+  timelineControl: { set: (value: number) => void } | null,
   onProgress?: (percent: number) => void,
 ): Promise<ArrayBuffer> {
   const { toCanvas } = await import("html-to-image");
@@ -116,11 +117,6 @@ export async function generateVideo(
   const offsetX = Math.round((EXPORT_SETTINGS.WIDTH - drawW) / 2);
   const offsetY = Math.round((EXPORT_SETTINGS.HEIGHT - drawH) / 2);
 
-  const timelineControl = (
-    window as unknown as {
-      __REVEAL_TIMELINE__?: { set: (value: number) => void };
-    }
-  ).__REVEAL_TIMELINE__;
   if (!timelineControl) {
     throw new Error("Timeline control not found.");
   }

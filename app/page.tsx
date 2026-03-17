@@ -205,6 +205,39 @@ const RevealPreview = memo(function RevealPreview({
 });
 
 const SUCCESS_RESET_MS = 2400;
+const MAX_EXPORT_PAYLOAD_BYTES = 9 * 1024 * 1024;
+
+function getExportPayload(
+  safeTitle: string,
+  safeSubtitle: string,
+  safeBadgeLabel: string,
+  safeBadgePrefix: string,
+  safeIconUrl: string | undefined,
+  safeBadgeIconUrl: string | undefined,
+  previewControls: {
+    iconCornerRadius: number;
+    durationMs: number;
+    playbackRate: number;
+    glowColor: string;
+    rimColor: string;
+    grayColor: string;
+  },
+) {
+  return {
+    title: safeTitle,
+    subtitle: safeSubtitle,
+    ctaLabel: safeBadgeLabel,
+    badgePrefix: safeBadgePrefix,
+    iconUrl: safeIconUrl ?? "",
+    badgeIconUrl: safeBadgeIconUrl ?? "",
+    iconCornerRadius: String(previewControls.iconCornerRadius),
+    durationMs: String(previewControls.durationMs),
+    playbackRate: String(previewControls.playbackRate),
+    glowColor: previewControls.glowColor,
+    rimColor: previewControls.rimColor,
+    grayColor: previewControls.grayColor,
+  };
+}
 
 export default function Home() {
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -220,13 +253,18 @@ export default function Home() {
     controls,
     previewControls,
     iconFileInputKey,
+    badgeIconFileInputKey,
     uploadedIconName,
     uploadedIconUrl,
+    uploadedBadgeIconName,
+    uploadedBadgeIconUrl,
     updateTextControl,
     updateRangeControl,
     updateColorControl,
     setUploadedIconFile,
+    setUploadedBadgeIconFile,
     clearUploadedIcon,
+    clearUploadedBadgeIcon,
     safeTitle,
     safeSubtitle,
     safeBadgeLabel,
@@ -256,23 +294,28 @@ export default function Home() {
     setExportStatus(exportMessages.rendering);
 
     try {
+      const payload = getExportPayload(
+        safeTitle,
+        safeSubtitle,
+        safeBadgeLabel,
+        safeBadgePrefix,
+        safeIconUrl,
+        safeBadgeIconUrl,
+        previewControls,
+      );
+      const serializedPayload = JSON.stringify(payload);
+      const payloadBytes = new TextEncoder().encode(serializedPayload).length;
+
+      if (payloadBytes > MAX_EXPORT_PAYLOAD_BYTES) {
+        throw new Error(
+          "Images are too large to export. Use smaller files or lower-resolution icons.",
+        );
+      }
+
       const response = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: safeTitle,
-          subtitle: safeSubtitle,
-          ctaLabel: safeBadgeLabel,
-          badgePrefix: safeBadgePrefix,
-          iconUrl: safeIconUrl ?? "",
-          badgeIconUrl: safeBadgeIconUrl ?? "",
-          iconCornerRadius: String(previewControls.iconCornerRadius),
-          durationMs: String(previewControls.durationMs),
-          playbackRate: String(previewControls.playbackRate),
-          glowColor: previewControls.glowColor,
-          rimColor: previewControls.rimColor,
-          grayColor: previewControls.grayColor,
-        }),
+        body: serializedPayload,
       });
 
       if (!response.ok) {
@@ -343,15 +386,20 @@ export default function Home() {
         controls={controls}
         isCollapsed={isPanelCollapsed}
         iconFileInputKey={iconFileInputKey}
+        badgeIconFileInputKey={badgeIconFileInputKey}
         uploadedIconName={uploadedIconName}
         uploadedIconUrl={uploadedIconUrl}
+        uploadedBadgeIconName={uploadedBadgeIconName}
+        uploadedBadgeIconUrl={uploadedBadgeIconUrl}
         onToggleCollapsed={toggleCollapsed}
         onRequestCollapse={requestCollapse}
         onTextChange={updateTextControl}
         onRangeChange={updateRangeControl}
         onColorChange={updateColorControl}
         onIconFileChange={setUploadedIconFile}
+        onBadgeIconFileChange={setUploadedBadgeIconFile}
         onClearUploadedIcon={clearUploadedIcon}
+        onClearUploadedBadgeIcon={clearUploadedBadgeIcon}
       />
 
       <RevealPreview

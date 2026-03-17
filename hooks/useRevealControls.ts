@@ -6,7 +6,7 @@ import {
   useState,
 } from "react";
 import { initialControls } from "../utils/revealControls";
-import { readFileAsDataURL } from "../utils/fileReader";
+import { readImageFileAsDataURL } from "../utils/fileReader";
 
 export type TextControlKey =
   | "title"
@@ -22,19 +22,64 @@ export type RangeControlKey =
   | "iconCornerRadius";
 export type ColorControlKey = "glowColor" | "rimColor" | "grayColor";
 
-export function useRevealControls() {
-  const [controls, setControls] = useState(initialControls);
-  const [iconFileInputKey, setIconFileInputKey] = useState(0);
-  const [uploadedIconUrl, setUploadedIconUrl] = useState<string | null>(null);
-  const [uploadedIconName, setUploadedIconName] = useState("");
+function useDataUrlUpload(errorLabel: string) {
+  const [fileInputKey, setFileInputKey] = useState(0);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const [uploadedName, setUploadedName] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
-  const previewControls = useDeferredValue(controls);
 
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
     };
   }, []);
+
+  const setUploadedFile = useCallback(
+    async (file?: File) => {
+      if (!file) {
+        return;
+      }
+
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = new AbortController();
+      setUploadedName(file.name);
+
+      try {
+        const dataUrl = await readImageFileAsDataURL(file);
+
+        if (!abortControllerRef.current?.signal.aborted) {
+          setUploadedUrl(dataUrl);
+        }
+      } catch (error) {
+        console.error(`Failed to read ${errorLabel}:`, error);
+        setUploadedUrl(null);
+      }
+    },
+    [errorLabel],
+  );
+
+  const clearUploadedFile = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setUploadedUrl(null);
+    setUploadedName("");
+    setFileInputKey((current) => current + 1);
+  }, []);
+
+  return {
+    fileInputKey,
+    uploadedUrl,
+    uploadedName,
+    setUploadedFile,
+    clearUploadedFile,
+  };
+}
+
+export function useRevealControls() {
+  const [controls, setControls] = useState(initialControls);
+  const previewControls = useDeferredValue(controls);
+  const iconUpload = useDataUrlUpload("icon file");
+  const badgeIconUpload = useDataUrlUpload("badge icon file");
 
   const updateTextControl = useCallback(
     (key: TextControlKey, value: string) => {
@@ -66,38 +111,6 @@ export function useRevealControls() {
     [],
   );
 
-  const setUploadedIconFile = useCallback(async (file?: File) => {
-    if (!file) {
-      return;
-    }
-
-    // Cancel any ongoing file read
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = new AbortController();
-
-    setUploadedIconName(file.name);
-
-    try {
-      const dataUrl = await readFileAsDataURL(file);
-
-      // Check if this operation was aborted
-      if (!abortControllerRef.current?.signal.aborted) {
-        setUploadedIconUrl(dataUrl);
-      }
-    } catch (error) {
-      console.error("Failed to read icon file:", error);
-      setUploadedIconUrl(null);
-    }
-  }, []);
-
-  const clearUploadedIcon = useCallback(() => {
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-    setUploadedIconUrl(null);
-    setUploadedIconName("");
-    setIconFileInputKey((current) => current + 1);
-  }, []);
-
   const safeTitle = previewControls.title.trim() || initialControls.title;
   const safeSubtitle =
     previewControls.subtitle.trim() || initialControls.subtitle;
@@ -106,20 +119,27 @@ export function useRevealControls() {
   const safeBadgePrefix =
     previewControls.badgePrefix.trim() || initialControls.badgePrefix;
   const safeIconUrl =
-    uploadedIconUrl ?? (previewControls.iconUrl.trim() || undefined);
-  const safeBadgeIconUrl = previewControls.badgeIconUrl.trim() || undefined;
+    iconUpload.uploadedUrl ?? (previewControls.iconUrl.trim() || undefined);
+  const safeBadgeIconUrl =
+    badgeIconUpload.uploadedUrl ??
+    (previewControls.badgeIconUrl.trim() || undefined);
 
   return {
     controls,
     previewControls,
-    iconFileInputKey,
-    uploadedIconName,
-    uploadedIconUrl,
+    iconFileInputKey: iconUpload.fileInputKey,
+    badgeIconFileInputKey: badgeIconUpload.fileInputKey,
+    uploadedIconName: iconUpload.uploadedName,
+    uploadedIconUrl: iconUpload.uploadedUrl,
+    uploadedBadgeIconName: badgeIconUpload.uploadedName,
+    uploadedBadgeIconUrl: badgeIconUpload.uploadedUrl,
     updateTextControl,
     updateRangeControl,
     updateColorControl,
-    setUploadedIconFile,
-    clearUploadedIcon,
+    setUploadedIconFile: iconUpload.setUploadedFile,
+    setUploadedBadgeIconFile: badgeIconUpload.setUploadedFile,
+    clearUploadedIcon: iconUpload.clearUploadedFile,
+    clearUploadedBadgeIcon: badgeIconUpload.clearUploadedFile,
     safeTitle,
     safeSubtitle,
     safeBadgeLabel,

@@ -18,6 +18,13 @@ const ALLOWED_PARAMS = [
 const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
 const BROWSER_TIMEOUT = 480000; // 8 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
+const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
+const MAX_CONCURRENT_EXPORTS = 2;
+
+let browserPromise: Promise<Awaited<ReturnType<typeof getBrowser>>> | null =
+  null;
+let activeExportCount = 0;
+const exportQueue: Array<() => void> = [];
 
 async function getBrowser() {
   const puppeteer = await import("puppeteer");
@@ -34,6 +41,46 @@ async function getBrowser() {
   });
 }
 
+async function getSharedBrowser() {
+  if (!browserPromise) {
+    browserPromise = getBrowser()
+      .then((browser) => {
+        browser.on("disconnected", () => {
+          browserPromise = null;
+        });
+        return browser;
+      })
+      .catch((error) => {
+        browserPromise = null;
+        throw error;
+      });
+  }
+
+  return browserPromise;
+}
+
+async function acquireExportSlot() {
+  if (activeExportCount < MAX_CONCURRENT_EXPORTS) {
+    activeExportCount += 1;
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    exportQueue.push(() => {
+      activeExportCount += 1;
+      resolve();
+    });
+  });
+}
+
+function releaseExportSlot() {
+  activeExportCount = Math.max(0, activeExportCount - 1);
+  const nextExport = exportQueue.shift();
+  if (nextExport) {
+    nextExport();
+  }
+}
+
 function validateRequestBody(body: unknown): body is Record<string, unknown> {
   if (!body || typeof body !== "object") {
     return false;
@@ -43,6 +90,8 @@ function validateRequestBody(body: unknown): body is Record<string, unknown> {
 
 export async function POST(request: Request) {
   let browser;
+  let page;
+  let hasSlot = false;
 
   try {
     // Check content length
@@ -64,11 +113,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const params = new URLSearchParams();
+    const exportPayload: Record<string, string> = {};
     for (const key of ALLOWED_PARAMS) {
       const value = body[key];
       if (typeof value === "string" && value.length > 0) {
-        params.set(key, value);
+        exportPayload[key] = value;
       }
     }
 
@@ -78,11 +127,26 @@ export async function POST(request: Request) {
       "localhost:3000";
     const protocol = request.headers.get("x-forwarded-proto") ?? "http";
     const baseUrl = `${protocol}://${host}`;
-    const renderUrl = `${baseUrl}/render?${params.toString()}`;
+    const renderUrl = `${baseUrl}/render?renderMode=export`;
 
-    browser = await getBrowser();
-    const page = await browser.newPage();
+    await acquireExportSlot();
+    hasSlot = true;
+
+    browser = await getSharedBrowser();
+    page = await browser.newPage();
     await page.setViewport({ width: 1080, height: 1920 });
+
+    await page.goto(baseUrl, {
+      waitUntil: "networkidle2",
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+
+    await page.evaluate(
+      ({ storageKey, payload }) => {
+        window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
+      },
+      { storageKey: EXPORT_PAYLOAD_STORAGE_KEY, payload: exportPayload },
+    );
 
     await page.goto(renderUrl, {
       waitUntil: "networkidle2",
@@ -111,9 +175,6 @@ export async function POST(request: Request) {
       }
       return btoa(binary);
     });
-
-    await browser.close();
-    browser = undefined;
 
     const videoBuffer = Buffer.from(videoBase64, "base64");
 
@@ -144,8 +205,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: errorMessage }, { status: statusCode });
   } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
+    if (page) {
+      await page.close().catch(() => {});
+    }
+    if (hasSlot) {
+      releaseExportSlot();
     }
   }
 }
