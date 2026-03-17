@@ -48,9 +48,8 @@ async function getBrowser() {
       "--single-process",
       "--no-zygote",
     ],
-    defaultViewport: chromium.default.defaultViewport,
     executablePath: await chromium.default.executablePath(),
-    headless: chromium.default.headless,
+    headless: true,
   });
 }
 
