@@ -36,10 +36,21 @@ async function getBrowser() {
 
   const chromium = await import("@sparticuz/chromium");
   const puppeteer = await import("puppeteer-core");
+  
   return puppeteer.default.launch({
-    args: [...chromium.default.args, "--disable-web-security"],
+    args: [
+      ...chromium.default.args,
+      "--disable-web-security",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
+    ],
+    defaultViewport: chromium.default.defaultViewport,
     executablePath: await chromium.default.executablePath(),
-    headless: true,
+    headless: chromium.default.headless,
   });
 }
 
