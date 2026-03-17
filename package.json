@@ -5,17 +5,16 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "next start",
     "lint": "eslint",
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@sparticuz/chromium": "^143.0.4",
     "framer-motion": "^12.38.0",
     "html-to-image": "^1.11.13",
     "mp4-muxer": "^5.2.2",
     "next": "16.1.7",
-    "puppeteer-core": "^24.39.1",
+    "puppeteer": "^24.39.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
@@ -28,7 +27,6 @@
     "eslint-config-next": "16.1.7",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
-    "puppeteer": "^24.39.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

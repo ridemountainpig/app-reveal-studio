@@ -16,40 +16,21 @@ const ALLOWED_PARAMS = [
 ] as const;
 
 const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
-const BROWSER_TIMEOUT = 120000; // 2 minutes
+const BROWSER_TIMEOUT = 480000; // 8 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
 
 async function getBrowser() {
-  if (process.env.NODE_ENV === "development") {
-    const puppeteer = await import("puppeteer");
-    return puppeteer.default.launch({
-      headless: true,
-      args: [
-        "--disable-web-security",
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-gpu",
-        "--hide-scrollbars",
-      ],
-    });
-  }
-
-  const chromium = await import("@sparticuz/chromium");
-  const puppeteer = await import("puppeteer-core");
-  
+  const puppeteer = await import("puppeteer");
   return puppeteer.default.launch({
+    headless: true,
     args: [
-      ...chromium.default.args,
       "--disable-web-security",
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--single-process",
-      "--no-zygote",
+      "--hide-scrollbars",
     ],
-    executablePath: await chromium.default.executablePath(),
-    headless: true,
   });
 }
 

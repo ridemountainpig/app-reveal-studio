@@ -1,9 +1,0 @@
-{
-  "dockerfile": "Dockerfile",
-  "buildCommand": "pnpm install && pnpm build",
-  "startCommand": "pnpm start",
-  "exposePort": 3000,
-  "env": {
-    "NODE_ENV": "production"
-  }
-}
