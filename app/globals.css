@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans:
+    "SF Pro Display", "PingFang TC", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft JhengHei", "Microsoft YaHei", "Noto Sans CJK TC",
+    "Noto Sans CJK SC", "Noto Sans TC", "Noto Sans SC", "Source Han Sans TC",
+    "Source Han Sans SC", "Avenir Next", "Segoe UI", sans-serif;
+}
+
 @layer base {
   :root {
-    font-family: "SF Pro Display", "Avenir Next", "Segoe UI", sans-serif;
+    font-family: var(--font-sans);
     line-height: 1.5;
     font-weight: 400;
     color: rgba(255, 255, 255, 0.96);

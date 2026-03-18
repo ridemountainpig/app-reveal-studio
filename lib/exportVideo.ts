@@ -3,6 +3,14 @@ import { EXPORT_SETTINGS } from "../constants/exportSettings";
 const waitForNextPaint = () =>
   new Promise<void>((r) => requestAnimationFrame(() => r()));
 
+const waitForFonts = async () => {
+  if (typeof document === "undefined" || !("fonts" in document)) {
+    return;
+  }
+
+  await document.fonts.ready;
+};
+
 const waitForImages = async (container: HTMLElement) => {
   const imgs = container.querySelectorAll("img");
   await Promise.all(
@@ -54,6 +62,7 @@ export async function generateVideo(
   ) => Promise<HTMLCanvasElement>;
 
   await waitForNextPaint();
+  await waitForFonts();
   await waitForImages(captureNode);
   await new Promise((r) => setTimeout(r, EXPORT_SETTINGS.WAIT_TIME_MS));
 
