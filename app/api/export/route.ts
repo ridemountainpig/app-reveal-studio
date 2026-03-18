@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { logger, serializeError } from "@/lib/logger";
+
+export const runtime = "nodejs";
+
 const ALLOWED_PARAMS = [
   "title",
   "subtitle",
@@ -20,6 +24,11 @@ const BROWSER_TIMEOUT = 480000; // 8 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
 const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
 const MAX_CONCURRENT_EXPORTS = 2;
+const BYTES_PER_MB = 1024 * 1024;
+
+function msToSeconds(value: number) {
+  return Number((value / 1000).toFixed(2));
+}
 
 let browserPromise: Promise<Awaited<ReturnType<typeof getBrowser>>> | null =
   null;
@@ -92,10 +101,16 @@ export async function POST(request: Request) {
   let browser;
   let page;
   let hasSlot = false;
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+  const routeLogger = logger.child({
+    scope: "video-export",
+    requestId,
+  });
 
   try {
-    // Check content length
     const contentLength = request.headers.get("content-length");
+
     if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
       return NextResponse.json(
         { error: "Request body too large" },
@@ -105,7 +120,6 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    // Validate request body
     if (!validateRequestBody(body)) {
       return NextResponse.json(
         { error: "Invalid request body" },
@@ -128,6 +142,12 @@ export async function POST(request: Request) {
     const protocol = request.headers.get("x-forwarded-proto") ?? "http";
     const baseUrl = `${protocol}://${host}`;
     const renderUrl = `${baseUrl}/render?renderMode=export`;
+    routeLogger.info({
+      event: "render.started",
+      durationSeconds: exportPayload.durationMs
+        ? msToSeconds(Number(exportPayload.durationMs))
+        : null,
+    });
 
     await acquireExportSlot();
     hasSlot = true;
@@ -135,6 +155,12 @@ export async function POST(request: Request) {
     browser = await getSharedBrowser();
     page = await browser.newPage();
     await page.setViewport({ width: 1080, height: 1920 });
+    page.on("pageerror", (error) => {
+      routeLogger.error({
+        event: "render.pageerror",
+        error: serializeError(error),
+      });
+    });
 
     await page.goto(baseUrl, {
       waitUntil: "domcontentloaded",
@@ -162,6 +188,11 @@ export async function POST(request: Request) {
         (window as unknown as { __EXPORT_ERROR__?: string }).__EXPORT_ERROR__,
     );
     if (errorMsg) {
+      routeLogger.error({
+        event: "render.failed.in_page",
+        errorMessage: errorMsg,
+        elapsedSeconds: msToSeconds(Date.now() - startedAt),
+      });
       return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
 
@@ -175,6 +206,11 @@ export async function POST(request: Request) {
     );
 
     const videoBuffer = Buffer.from(videoBytes);
+    routeLogger.info({
+      event: "render.completed",
+      sizeMb: Number((videoBuffer.length / BYTES_PER_MB).toFixed(2)),
+      elapsedSeconds: msToSeconds(Date.now() - startedAt),
+    });
 
     return new NextResponse(videoBuffer, {
       status: 200,
@@ -182,6 +218,7 @@ export async function POST(request: Request) {
         "Content-Type": "video/mp4",
         "Content-Disposition": 'attachment; filename="app-reveal.mp4"',
         "Content-Length": String(videoBuffer.length),
+        "X-Export-Request-Id": requestId,
       },
     });
   } catch (error) {
@@ -200,6 +237,14 @@ export async function POST(request: Request) {
       statusCode = 502;
       errorMessage = "Failed to load render page. Please try again.";
     }
+
+    routeLogger.error({
+      event: "render.failed",
+      statusCode,
+      errorMessage,
+      elapsedSeconds: msToSeconds(Date.now() - startedAt),
+      error: serializeError(error),
+    });
 
     return NextResponse.json({ error: errorMessage }, { status: statusCode });
   } finally {
