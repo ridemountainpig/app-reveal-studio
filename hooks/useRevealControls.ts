@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { initialControls } from "../utils/revealControls";
 import { readImageFileAsDataURL } from "../utils/fileReader";
 
@@ -77,7 +71,7 @@ function useDataUrlUpload(errorLabel: string) {
 
 export function useRevealControls() {
   const [controls, setControls] = useState(initialControls);
-  const previewControls = useDeferredValue(controls);
+  const previewControls = controls;
   const iconUpload = useDataUrlUpload("icon file");
   const badgeIconUpload = useDataUrlUpload("badge icon file");
 

@@ -137,7 +137,7 @@ export async function POST(request: Request) {
     await page.setViewport({ width: 1080, height: 1920 });
 
     await page.goto(baseUrl, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
       timeout: PAGE_LOAD_TIMEOUT,
     });
 
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
     );
 
     await page.goto(renderUrl, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
       timeout: PAGE_LOAD_TIMEOUT,
     });
 
@@ -165,18 +165,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
 
-    const videoBase64 = await page.evaluate(() => {
-      const buf = (window as unknown as { __EXPORT_RESULT__: ArrayBuffer })
-        .__EXPORT_RESULT__;
-      const bytes = new Uint8Array(buf);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return btoa(binary);
-    });
+    const videoBytes = await page.evaluate(() =>
+      Array.from(
+        new Uint8Array(
+          (window as unknown as { __EXPORT_RESULT__: ArrayBuffer })
+            .__EXPORT_RESULT__,
+        ),
+      ),
+    );
 
-    const videoBuffer = Buffer.from(videoBase64, "base64");
+    const videoBuffer = Buffer.from(videoBytes);
 
     return new NextResponse(videoBuffer, {
       status: 200,

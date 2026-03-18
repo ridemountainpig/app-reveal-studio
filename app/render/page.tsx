@@ -4,9 +4,48 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppReveal } from "../../components/AppReveal";
 import { generateVideo } from "../../lib/exportVideo";
+import { EXPORT_SETTINGS } from "../../constants/exportSettings";
 import { initialControls } from "../../utils/revealControls";
 
 const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
+
+type RenderControls = {
+  title: string;
+  subtitle: string;
+  ctaLabel: string;
+  badgePrefix: string;
+  iconUrl?: string;
+  badgeIconUrl?: string;
+  iconCornerRadius: number;
+  durationMs: number;
+  playbackRate: number;
+  glowColor: string;
+  rimColor: string;
+  grayColor: string;
+};
+
+function readRenderControls(
+  readValue: (key: string) => string | undefined,
+): RenderControls {
+  return {
+    title: readValue("title") || initialControls.title,
+    subtitle: readValue("subtitle") || initialControls.subtitle,
+    ctaLabel: readValue("ctaLabel") || initialControls.badgeLabel,
+    badgePrefix: readValue("badgePrefix") || initialControls.badgePrefix,
+    iconUrl: readValue("iconUrl") || undefined,
+    badgeIconUrl: readValue("badgeIconUrl") || undefined,
+    iconCornerRadius: Number(
+      readValue("iconCornerRadius") || initialControls.iconCornerRadius,
+    ),
+    durationMs: Number(readValue("durationMs") || initialControls.durationMs),
+    playbackRate: Number(
+      readValue("playbackRate") || initialControls.playbackRate,
+    ),
+    glowColor: readValue("glowColor") || initialControls.glowColor,
+    rimColor: readValue("rimColor") || initialControls.rimColor,
+    grayColor: readValue("grayColor") || initialControls.grayColor,
+  };
+}
 
 declare global {
   interface Window {
@@ -30,53 +69,17 @@ function RenderPageInner() {
   const hasStarted = useRef(false);
   const timelineRef = useRef<{ set: (value: number) => void } | null>(null);
   const [isReady, setIsReady] = useState(false);
-  const [renderControls, setRenderControls] = useState(() => ({
-    title: searchParams.get("title") || initialControls.title,
-    subtitle: searchParams.get("subtitle") || initialControls.subtitle,
-    ctaLabel: searchParams.get("ctaLabel") || initialControls.badgeLabel,
-    badgePrefix: searchParams.get("badgePrefix") || initialControls.badgePrefix,
-    iconUrl: searchParams.get("iconUrl") || undefined,
-    badgeIconUrl: searchParams.get("badgeIconUrl") || undefined,
-    iconCornerRadius: Number(
-      searchParams.get("iconCornerRadius") || initialControls.iconCornerRadius,
-    ),
-    durationMs: Number(
-      searchParams.get("durationMs") || initialControls.durationMs,
-    ),
-    playbackRate: Number(
-      searchParams.get("playbackRate") || initialControls.playbackRate,
-    ),
-    glowColor: searchParams.get("glowColor") || initialControls.glowColor,
-    rimColor: searchParams.get("rimColor") || initialControls.rimColor,
-    grayColor: searchParams.get("grayColor") || initialControls.grayColor,
-  }));
+  const [renderControls, setRenderControls] = useState<RenderControls>(() =>
+    readRenderControls((key) => searchParams.get(key) ?? undefined),
+  );
 
   useEffect(() => {
     const isExportMode = searchParams.get("renderMode") === "export";
 
     if (!isExportMode) {
-      setRenderControls({
-        title: searchParams.get("title") || initialControls.title,
-        subtitle: searchParams.get("subtitle") || initialControls.subtitle,
-        ctaLabel: searchParams.get("ctaLabel") || initialControls.badgeLabel,
-        badgePrefix:
-          searchParams.get("badgePrefix") || initialControls.badgePrefix,
-        iconUrl: searchParams.get("iconUrl") || undefined,
-        badgeIconUrl: searchParams.get("badgeIconUrl") || undefined,
-        iconCornerRadius: Number(
-          searchParams.get("iconCornerRadius") ||
-            initialControls.iconCornerRadius,
-        ),
-        durationMs: Number(
-          searchParams.get("durationMs") || initialControls.durationMs,
-        ),
-        playbackRate: Number(
-          searchParams.get("playbackRate") || initialControls.playbackRate,
-        ),
-        glowColor: searchParams.get("glowColor") || initialControls.glowColor,
-        rimColor: searchParams.get("rimColor") || initialControls.rimColor,
-        grayColor: searchParams.get("grayColor") || initialControls.grayColor,
-      });
+      setRenderControls(
+        readRenderControls((key) => searchParams.get(key) ?? undefined),
+      );
       setIsReady(true);
       return;
     }
@@ -90,24 +93,7 @@ function RenderPageInner() {
       }
 
       const payload = JSON.parse(rawPayload) as Record<string, string>;
-      setRenderControls({
-        title: payload.title || initialControls.title,
-        subtitle: payload.subtitle || initialControls.subtitle,
-        ctaLabel: payload.ctaLabel || initialControls.badgeLabel,
-        badgePrefix: payload.badgePrefix || initialControls.badgePrefix,
-        iconUrl: payload.iconUrl || undefined,
-        badgeIconUrl: payload.badgeIconUrl || undefined,
-        iconCornerRadius: Number(
-          payload.iconCornerRadius || initialControls.iconCornerRadius,
-        ),
-        durationMs: Number(payload.durationMs || initialControls.durationMs),
-        playbackRate: Number(
-          payload.playbackRate || initialControls.playbackRate,
-        ),
-        glowColor: payload.glowColor || initialControls.glowColor,
-        rimColor: payload.rimColor || initialControls.rimColor,
-        grayColor: payload.grayColor || initialControls.grayColor,
-      });
+      setRenderControls(readRenderControls((key) => payload[key]));
       window.sessionStorage.removeItem(EXPORT_PAYLOAD_STORAGE_KEY);
       setIsReady(true);
     } catch (error) {
@@ -155,7 +141,7 @@ function RenderPageInner() {
           err instanceof Error ? err.message : "Export failed.";
         window.__EXPORT_DONE__ = true;
       }
-    }, 500);
+    }, EXPORT_SETTINGS.EXPORT_START_DELAY_MS);
 
     return () => clearTimeout(timer);
   }, [durationMs, isReady]);
