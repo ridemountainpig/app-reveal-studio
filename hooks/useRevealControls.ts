@@ -35,18 +35,24 @@ function useDataUrlUpload(errorLabel: string) {
       }
 
       abortControllerRef.current?.abort();
-      abortControllerRef.current = new AbortController();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
       setUploadedName(file.name);
 
       try {
         const dataUrl = await readImageFileAsDataURL(file);
 
-        if (!abortControllerRef.current?.signal.aborted) {
+        if (
+          !controller.signal.aborted &&
+          abortControllerRef.current === controller
+        ) {
           setUploadedUrl(dataUrl);
         }
       } catch (error) {
         console.error(`Failed to read ${errorLabel}:`, error);
-        setUploadedUrl(null);
+        if (abortControllerRef.current === controller) {
+          setUploadedUrl(null);
+        }
       }
     },
     [errorLabel],
