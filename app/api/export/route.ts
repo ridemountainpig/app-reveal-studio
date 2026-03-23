@@ -20,6 +20,7 @@ const ALLOWED_PARAMS = [
 ] as const;
 
 const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_EXPORT_PAYLOAD_BYTES = 4 * 1024 * 1024; // Keep well below common sessionStorage quotas.
 const BROWSER_TIMEOUT = 480000; // 8 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
 const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
@@ -133,6 +134,20 @@ export async function POST(request: Request) {
       if (typeof value === "string" && value.length > 0) {
         exportPayload[key] = value;
       }
+    }
+
+    const exportPayloadBytes = new TextEncoder().encode(
+      JSON.stringify(exportPayload),
+    ).length;
+
+    if (exportPayloadBytes > MAX_EXPORT_PAYLOAD_BYTES) {
+      return NextResponse.json(
+        {
+          error:
+            "Images are too large to export. Use smaller files or lower-resolution icons.",
+        },
+        { status: 413 },
+      );
     }
 
     const host =

@@ -205,7 +205,7 @@ const RevealPreview = memo(function RevealPreview({
 });
 
 const SUCCESS_RESET_MS = 2400;
-const MAX_EXPORT_PAYLOAD_BYTES = 9 * 1024 * 1024;
+const MAX_EXPORT_PAYLOAD_BYTES = 4 * 1024 * 1024;
 
 function getExportPayload(
   safeTitle: string,

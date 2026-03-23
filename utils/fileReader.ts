@@ -1,5 +1,4 @@
 const MAX_IMAGE_DIMENSION = 1024;
-const OUTPUT_QUALITY = 0.92;
 
 function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -75,9 +74,5 @@ export async function readImageFileAsDataURL(file: File): Promise<string> {
 
   context.drawImage(image, 0, 0, scaledSize.width, scaledSize.height);
 
-  if (file.type === "image/png") {
-    return canvas.toDataURL("image/png");
-  }
-
-  return canvas.toDataURL("image/jpeg", OUTPUT_QUALITY);
+  return canvas.toDataURL("image/png");
 }
