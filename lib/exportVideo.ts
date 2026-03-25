@@ -1,9 +1,15 @@
 import { EXPORT_SETTINGS } from "../constants/exportSettings";
 
 const waitForNextPaint = () =>
-  new Promise<void>((r) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => r())),
-  );
+  new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+const waitForFonts = async () => {
+  if (typeof document === "undefined" || !("fonts" in document)) {
+    return;
+  }
+
+  await document.fonts.ready;
+};
 
 const waitForImages = async (container: HTMLElement) => {
   const imgs = container.querySelectorAll("img");
@@ -29,6 +35,7 @@ const captureFrame = async (
   elemWidth: number,
   elemHeight: number,
   pixelRatio: number,
+  fontEmbedCSS: string,
 ) =>
   toCanvas(node, {
     backgroundColor: EXPORT_SETTINGS.BACKGROUND,
@@ -37,6 +44,7 @@ const captureFrame = async (
     canvasWidth: elemWidth,
     canvasHeight: elemHeight,
     skipFonts: false,
+    fontEmbedCSS,
     imagePlaceholder: undefined,
     includeQueryParams: true,
   });
@@ -44,16 +52,17 @@ const captureFrame = async (
 export async function generateVideo(
   captureNode: HTMLElement,
   durationMs: number,
+  timelineControl: { set: (value: number) => void } | null,
   onProgress?: (percent: number) => void,
 ): Promise<ArrayBuffer> {
-  const { toCanvas } = await import("html-to-image");
+  const { getFontEmbedCSS, toCanvas } = await import("html-to-image");
   const toCanvasFn = toCanvas as (
     n: HTMLElement,
     o: Record<string, unknown>,
   ) => Promise<HTMLCanvasElement>;
 
   await waitForNextPaint();
-  await waitForNextPaint();
+  await waitForFonts();
   await waitForImages(captureNode);
   await new Promise((r) => setTimeout(r, EXPORT_SETTINGS.WAIT_TIME_MS));
 
@@ -68,6 +77,7 @@ export async function generateVideo(
     EXPORT_SETTINGS.WIDTH / elemW,
     EXPORT_SETTINGS.HEIGHT / elemH,
   );
+  const fontEmbedCSS = await getFontEmbedCSS(captureNode);
 
   const exportCanvas = document.createElement("canvas");
   exportCanvas.width = EXPORT_SETTINGS.WIDTH;
@@ -116,11 +126,6 @@ export async function generateVideo(
   const offsetX = Math.round((EXPORT_SETTINGS.WIDTH - drawW) / 2);
   const offsetY = Math.round((EXPORT_SETTINGS.HEIGHT - drawH) / 2);
 
-  const timelineControl = (
-    window as unknown as {
-      __REVEAL_TIMELINE__?: { set: (value: number) => void };
-    }
-  ).__REVEAL_TIMELINE__;
   if (!timelineControl) {
     throw new Error("Timeline control not found.");
   }
@@ -130,7 +135,6 @@ export async function generateVideo(
     timelineControl.set(progress);
 
     await waitForNextPaint();
-    await waitForNextPaint();
 
     const frameCanvas = await captureFrame(
       captureNode,
@@ -138,6 +142,7 @@ export async function generateVideo(
       elemW,
       elemH,
       pixelRatio,
+      fontEmbedCSS,
     );
 
     ctx.fillStyle = EXPORT_SETTINGS.BACKGROUND;

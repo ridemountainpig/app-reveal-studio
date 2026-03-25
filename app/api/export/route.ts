@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { logger, serializeError } from "@/lib/logger";
+
+export const runtime = "nodejs";
+
 const ALLOWED_PARAMS = [
   "title",
   "subtitle",
@@ -16,31 +20,75 @@ const ALLOWED_PARAMS = [
 ] as const;
 
 const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
-const BROWSER_TIMEOUT = 120000; // 2 minutes
+const MAX_EXPORT_PAYLOAD_BYTES = 4 * 1024 * 1024; // Keep well below common sessionStorage quotas.
+const BROWSER_TIMEOUT = 480000; // 8 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
+const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
+const MAX_CONCURRENT_EXPORTS = 2;
+const BYTES_PER_MB = 1024 * 1024;
+
+function msToSeconds(value: number) {
+  return Number((value / 1000).toFixed(2));
+}
+
+let browserPromise: Promise<Awaited<ReturnType<typeof getBrowser>>> | null =
+  null;
+let activeExportCount = 0;
+const exportQueue: Array<() => void> = [];
 
 async function getBrowser() {
-  if (process.env.NODE_ENV === "development") {
-    const puppeteer = await import("puppeteer");
-    return puppeteer.default.launch({
-      headless: true,
-      args: [
-        "--disable-web-security",
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-gpu",
-        "--hide-scrollbars",
-      ],
-    });
+  const puppeteer = await import("puppeteer");
+  return puppeteer.default.launch({
+    headless: true,
+    args: [
+      "--disable-web-security",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--hide-scrollbars",
+    ],
+  });
+}
+
+async function getSharedBrowser() {
+  if (!browserPromise) {
+    browserPromise = getBrowser()
+      .then((browser) => {
+        browser.on("disconnected", () => {
+          browserPromise = null;
+        });
+        return browser;
+      })
+      .catch((error) => {
+        browserPromise = null;
+        throw error;
+      });
   }
 
-  const chromium = await import("@sparticuz/chromium");
-  const puppeteer = await import("puppeteer-core");
-  return puppeteer.default.launch({
-    args: [...chromium.default.args, "--disable-web-security"],
-    executablePath: await chromium.default.executablePath(),
-    headless: true,
+  return browserPromise;
+}
+
+async function acquireExportSlot() {
+  if (activeExportCount < MAX_CONCURRENT_EXPORTS) {
+    activeExportCount += 1;
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    exportQueue.push(() => {
+      activeExportCount += 1;
+      resolve();
+    });
   });
+}
+
+function releaseExportSlot() {
+  activeExportCount = Math.max(0, activeExportCount - 1);
+  const nextExport = exportQueue.shift();
+  if (nextExport) {
+    nextExport();
+  }
 }
 
 function validateRequestBody(body: unknown): body is Record<string, unknown> {
@@ -52,10 +100,18 @@ function validateRequestBody(body: unknown): body is Record<string, unknown> {
 
 export async function POST(request: Request) {
   let browser;
+  let page;
+  let hasSlot = false;
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+  const routeLogger = logger.child({
+    scope: "video-export",
+    requestId,
+  });
 
   try {
-    // Check content length
     const contentLength = request.headers.get("content-length");
+
     if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
       return NextResponse.json(
         { error: "Request body too large" },
@@ -65,7 +121,6 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    // Validate request body
     if (!validateRequestBody(body)) {
       return NextResponse.json(
         { error: "Invalid request body" },
@@ -73,12 +128,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const params = new URLSearchParams();
+    const exportPayload: Record<string, string> = {};
     for (const key of ALLOWED_PARAMS) {
       const value = body[key];
       if (typeof value === "string" && value.length > 0) {
-        params.set(key, value);
+        exportPayload[key] = value;
       }
+    }
+
+    const exportPayloadBytes = new TextEncoder().encode(
+      JSON.stringify(exportPayload),
+    ).length;
+
+    if (exportPayloadBytes > MAX_EXPORT_PAYLOAD_BYTES) {
+      return NextResponse.json(
+        {
+          error:
+            "Images are too large to export. Use smaller files or lower-resolution icons.",
+        },
+        { status: 413 },
+      );
     }
 
     const host =
@@ -87,14 +156,41 @@ export async function POST(request: Request) {
       "localhost:3000";
     const protocol = request.headers.get("x-forwarded-proto") ?? "http";
     const baseUrl = `${protocol}://${host}`;
-    const renderUrl = `${baseUrl}/render?${params.toString()}`;
+    const renderUrl = `${baseUrl}/render?renderMode=export`;
+    routeLogger.info({
+      event: "render.started",
+      durationSeconds: exportPayload.durationMs
+        ? msToSeconds(Number(exportPayload.durationMs))
+        : null,
+    });
 
-    browser = await getBrowser();
-    const page = await browser.newPage();
+    await acquireExportSlot();
+    hasSlot = true;
+
+    browser = await getSharedBrowser();
+    page = await browser.newPage();
     await page.setViewport({ width: 1080, height: 1920 });
+    page.on("pageerror", (error) => {
+      routeLogger.error({
+        event: "render.pageerror",
+        error: serializeError(error),
+      });
+    });
+
+    await page.goto(baseUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+
+    await page.evaluate(
+      ({ storageKey, payload }) => {
+        window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
+      },
+      { storageKey: EXPORT_PAYLOAD_STORAGE_KEY, payload: exportPayload },
+    );
 
     await page.goto(renderUrl, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
       timeout: PAGE_LOAD_TIMEOUT,
     });
 
@@ -107,24 +203,29 @@ export async function POST(request: Request) {
         (window as unknown as { __EXPORT_ERROR__?: string }).__EXPORT_ERROR__,
     );
     if (errorMsg) {
+      routeLogger.error({
+        event: "render.failed.in_page",
+        errorMessage: errorMsg,
+        elapsedSeconds: msToSeconds(Date.now() - startedAt),
+      });
       return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
 
-    const videoBase64 = await page.evaluate(() => {
-      const buf = (window as unknown as { __EXPORT_RESULT__: ArrayBuffer })
-        .__EXPORT_RESULT__;
-      const bytes = new Uint8Array(buf);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return btoa(binary);
+    const videoBytes = await page.evaluate(() =>
+      Array.from(
+        new Uint8Array(
+          (window as unknown as { __EXPORT_RESULT__: ArrayBuffer })
+            .__EXPORT_RESULT__,
+        ),
+      ),
+    );
+
+    const videoBuffer = Buffer.from(videoBytes);
+    routeLogger.info({
+      event: "render.completed",
+      sizeMb: Number((videoBuffer.length / BYTES_PER_MB).toFixed(2)),
+      elapsedSeconds: msToSeconds(Date.now() - startedAt),
     });
-
-    await browser.close();
-    browser = undefined;
-
-    const videoBuffer = Buffer.from(videoBase64, "base64");
 
     return new NextResponse(videoBuffer, {
       status: 200,
@@ -132,6 +233,7 @@ export async function POST(request: Request) {
         "Content-Type": "video/mp4",
         "Content-Disposition": 'attachment; filename="app-reveal.mp4"',
         "Content-Length": String(videoBuffer.length),
+        "X-Export-Request-Id": requestId,
       },
     });
   } catch (error) {
@@ -151,10 +253,21 @@ export async function POST(request: Request) {
       errorMessage = "Failed to load render page. Please try again.";
     }
 
+    routeLogger.error({
+      event: "render.failed",
+      statusCode,
+      errorMessage,
+      elapsedSeconds: msToSeconds(Date.now() - startedAt),
+      error: serializeError(error),
+    });
+
     return NextResponse.json({ error: errorMessage }, { status: statusCode });
   } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
+    if (page) {
+      await page.close().catch(() => {});
+    }
+    if (hasSlot) {
+      releaseExportSlot();
     }
   }
 }

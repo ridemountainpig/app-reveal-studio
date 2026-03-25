@@ -1,19 +1,57 @@
 "use client";
 
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppReveal } from "../../components/AppReveal";
 import { generateVideo } from "../../lib/exportVideo";
+import { EXPORT_SETTINGS } from "../../constants/exportSettings";
 import { initialControls } from "../../utils/revealControls";
+
+const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
+
+type RenderControls = {
+  title: string;
+  subtitle: string;
+  ctaLabel: string;
+  badgePrefix: string;
+  iconUrl?: string;
+  badgeIconUrl?: string;
+  iconCornerRadius: number;
+  durationMs: number;
+  playbackRate: number;
+  glowColor: string;
+  rimColor: string;
+  grayColor: string;
+};
+
+function readRenderControls(
+  readValue: (key: string) => string | undefined,
+): RenderControls {
+  return {
+    title: readValue("title") || initialControls.title,
+    subtitle: readValue("subtitle") || initialControls.subtitle,
+    ctaLabel: readValue("ctaLabel") || initialControls.badgeLabel,
+    badgePrefix: readValue("badgePrefix") || initialControls.badgePrefix,
+    iconUrl: readValue("iconUrl") || undefined,
+    badgeIconUrl: readValue("badgeIconUrl") || undefined,
+    iconCornerRadius: Number(
+      readValue("iconCornerRadius") || initialControls.iconCornerRadius,
+    ),
+    durationMs: Number(readValue("durationMs") || initialControls.durationMs),
+    playbackRate: Number(
+      readValue("playbackRate") || initialControls.playbackRate,
+    ),
+    glowColor: readValue("glowColor") || initialControls.glowColor,
+    rimColor: readValue("rimColor") || initialControls.rimColor,
+    grayColor: readValue("grayColor") || initialControls.grayColor,
+  };
+}
 
 declare global {
   interface Window {
     __EXPORT_DONE__?: boolean;
     __EXPORT_RESULT__?: ArrayBuffer;
     __EXPORT_ERROR__?: string;
-    __REVEAL_TIMELINE__?: {
-      set: (value: number) => void;
-    };
   }
 }
 
@@ -30,32 +68,58 @@ function RenderPageInner() {
   const captureRef = useRef<HTMLDivElement | null>(null);
   const hasStarted = useRef(false);
   const timelineRef = useRef<{ set: (value: number) => void } | null>(null);
-
-  const title = searchParams.get("title") || initialControls.title;
-  const subtitle = searchParams.get("subtitle") || initialControls.subtitle;
-  const ctaLabel = searchParams.get("ctaLabel") || initialControls.badgeLabel;
-  const badgePrefix =
-    searchParams.get("badgePrefix") || initialControls.badgePrefix;
-  const iconUrl = searchParams.get("iconUrl") || undefined;
-  const badgeIconUrl = searchParams.get("badgeIconUrl") || undefined;
-  const iconCornerRadius = Number(
-    searchParams.get("iconCornerRadius") || initialControls.iconCornerRadius,
+  const [isReady, setIsReady] = useState(false);
+  const [renderControls, setRenderControls] = useState<RenderControls>(() =>
+    readRenderControls((key) => searchParams.get(key) ?? undefined),
   );
-  const durationMs = Number(
-    searchParams.get("durationMs") || initialControls.durationMs,
-  );
-  const playbackRate = Number(
-    searchParams.get("playbackRate") || initialControls.playbackRate,
-  );
-  const glowColor = searchParams.get("glowColor") || initialControls.glowColor;
-  const rimColor = searchParams.get("rimColor") || initialControls.rimColor;
-  const grayColor = searchParams.get("grayColor") || initialControls.grayColor;
 
   useEffect(() => {
-    window.__REVEAL_TIMELINE__ = timelineRef.current ?? undefined;
-  }, []);
+    const isExportMode = searchParams.get("renderMode") === "export";
+
+    if (!isExportMode) {
+      setRenderControls(
+        readRenderControls((key) => searchParams.get(key) ?? undefined),
+      );
+      setIsReady(true);
+      return;
+    }
+
+    try {
+      const rawPayload = window.sessionStorage.getItem(
+        EXPORT_PAYLOAD_STORAGE_KEY,
+      );
+      if (!rawPayload) {
+        throw new Error("Export payload not found.");
+      }
+
+      const payload = JSON.parse(rawPayload) as Record<string, string>;
+      setRenderControls(readRenderControls((key) => payload[key]));
+      window.sessionStorage.removeItem(EXPORT_PAYLOAD_STORAGE_KEY);
+      setIsReady(true);
+    } catch (error) {
+      window.__EXPORT_ERROR__ =
+        error instanceof Error ? error.message : "Invalid export payload.";
+      window.__EXPORT_DONE__ = true;
+    }
+  }, [searchParams]);
+
+  const {
+    title,
+    subtitle,
+    ctaLabel,
+    badgePrefix,
+    iconUrl,
+    badgeIconUrl,
+    iconCornerRadius,
+    durationMs,
+    playbackRate,
+    glowColor,
+    rimColor,
+    grayColor,
+  } = renderControls;
 
   useEffect(() => {
+    if (!isReady) return;
     if (hasStarted.current) return;
     hasStarted.current = true;
 
@@ -68,7 +132,8 @@ function RenderPageInner() {
       }
 
       try {
-        const buffer = await generateVideo(node, durationMs);
+        const timelineControl = timelineRef.current;
+        const buffer = await generateVideo(node, durationMs, timelineControl);
         window.__EXPORT_RESULT__ = buffer;
         window.__EXPORT_DONE__ = true;
       } catch (err) {
@@ -76,36 +141,38 @@ function RenderPageInner() {
           err instanceof Error ? err.message : "Export failed.";
         window.__EXPORT_DONE__ = true;
       }
-    }, 500);
+    }, EXPORT_SETTINGS.EXPORT_START_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [durationMs]);
+  }, [durationMs, isReady]);
 
   return (
     <div
       className="flex min-h-screen items-center justify-center bg-black"
       style={{ width: 1080, height: 1920 }}
     >
-      <div ref={captureRef} className="px-12 py-16">
-        <AppReveal
-          title={title}
-          subtitle={subtitle}
-          ctaLabel={ctaLabel}
-          badgePrefix={badgePrefix}
-          iconCornerRadius={iconCornerRadius}
-          durationMs={durationMs}
-          playbackRate={playbackRate}
-          restartToken={1}
-          iconUrl={iconUrl}
-          iconAlt={title}
-          badgeIconUrl={badgeIconUrl}
-          badgeIconAlt={ctaLabel}
-          glowColor={glowColor}
-          rimColor={rimColor}
-          grayColor={grayColor}
-          timelineRef={timelineRef}
-        />
-      </div>
+      {isReady ? (
+        <div ref={captureRef} className="px-12 py-16">
+          <AppReveal
+            title={title}
+            subtitle={subtitle}
+            ctaLabel={ctaLabel}
+            badgePrefix={badgePrefix}
+            iconCornerRadius={iconCornerRadius}
+            durationMs={durationMs}
+            playbackRate={playbackRate}
+            restartToken={1}
+            iconUrl={iconUrl}
+            iconAlt={title}
+            badgeIconUrl={badgeIconUrl}
+            badgeIconAlt={ctaLabel}
+            glowColor={glowColor}
+            rimColor={rimColor}
+            grayColor={grayColor}
+            timelineRef={timelineRef}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -253,7 +253,7 @@ export function RevealIcon({
       {iconUrl && !imageError && (
         <>
           <motion.img
-            className="absolute inset-0 z-10 h-full w-full object-contain mix-blend-screen"
+            className="absolute inset-0 z-10 h-full w-full object-cover mix-blend-screen"
             src={iconUrl}
             alt=""
             aria-hidden="true"
@@ -269,7 +269,7 @@ export function RevealIcon({
             }}
           />
           <motion.img
-            className="absolute inset-0 z-20 h-full w-full object-contain"
+            className="absolute inset-0 z-20 h-full w-full object-cover"
             src={iconUrl}
             alt={iconAlt}
             referrerPolicy="no-referrer"
