@@ -27,6 +27,13 @@ const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
 const MAX_CONCURRENT_EXPORTS = 2;
 const BYTES_PER_MB = 1024 * 1024;
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidClientId(value: unknown): value is string {
+  return typeof value === "string" && UUID_REGEX.test(value);
+}
+
 function msToSeconds(value: number) {
   return Number((value / 1000).toFixed(2));
 }
@@ -34,7 +41,9 @@ function msToSeconds(value: number) {
 let browserPromise: Promise<Awaited<ReturnType<typeof getBrowser>>> | null =
   null;
 let activeExportCount = 0;
-const exportQueue: Array<() => void> = [];
+type QueueEntry = { clientId: string; grant: () => void };
+const exportQueue: QueueEntry[] = [];
+const activeExportClientIds = new Set<string>();
 
 async function getBrowser() {
   const puppeteer = await import("puppeteer");
@@ -69,25 +78,29 @@ async function getSharedBrowser() {
   return browserPromise;
 }
 
-async function acquireExportSlot() {
+async function acquireExportSlot(clientId: string) {
   if (activeExportCount < MAX_CONCURRENT_EXPORTS) {
     activeExportCount += 1;
+    activeExportClientIds.add(clientId);
     return;
   }
 
   await new Promise<void>((resolve) => {
-    exportQueue.push(() => {
+    const grant = () => {
       activeExportCount += 1;
+      activeExportClientIds.add(clientId);
       resolve();
-    });
+    };
+    exportQueue.push({ clientId, grant });
   });
 }
 
-function releaseExportSlot() {
+function releaseExportSlot(clientId: string) {
+  activeExportClientIds.delete(clientId);
   activeExportCount = Math.max(0, activeExportCount - 1);
   const nextExport = exportQueue.shift();
   if (nextExport) {
-    nextExport();
+    nextExport.grant();
   }
 }
 
@@ -98,10 +111,44 @@ function validateRequestBody(body: unknown): body is Record<string, unknown> {
   return true;
 }
 
+export async function GET(request: Request) {
+  const clientId = new URL(request.url).searchParams.get("clientId");
+  if (!clientId || !isValidClientId(clientId)) {
+    return NextResponse.json(
+      { error: "Invalid or missing clientId" },
+      { status: 400 },
+    );
+  }
+
+  const queueIndex = exportQueue.findIndex((e) => e.clientId === clientId);
+  let phase: "queued" | "active" | "unknown";
+  let ahead: number | undefined;
+
+  if (queueIndex !== -1) {
+    phase = "queued";
+    ahead = queueIndex;
+  } else if (activeExportClientIds.has(clientId)) {
+    phase = "active";
+  } else {
+    phase = "unknown";
+  }
+
+  return NextResponse.json({
+    maxConcurrent: MAX_CONCURRENT_EXPORTS,
+    active: activeExportCount,
+    waitingTotal: exportQueue.length,
+    phase,
+    ...(ahead !== undefined ? { ahead } : {}),
+  });
+}
+
 export async function POST(request: Request) {
   let browser;
   let page;
   let hasSlot = false;
+  let clientIdForSlot: string | undefined;
+  let slotAcquiredAt: number | undefined;
+  let queueWaitSeconds: number | undefined;
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   const routeLogger = logger.child({
@@ -127,6 +174,14 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+
+    if (!isValidClientId(body.clientId)) {
+      return NextResponse.json(
+        { error: "Invalid or missing clientId" },
+        { status: 400 },
+      );
+    }
+    clientIdForSlot = body.clientId;
 
     const exportPayload: Record<string, string> = {};
     for (const key of ALLOWED_PARAMS) {
@@ -164,7 +219,10 @@ export async function POST(request: Request) {
         : null,
     });
 
-    await acquireExportSlot();
+    const beforeSlotAcquire = Date.now();
+    await acquireExportSlot(clientIdForSlot);
+    slotAcquiredAt = Date.now();
+    queueWaitSeconds = msToSeconds(slotAcquiredAt - beforeSlotAcquire);
     hasSlot = true;
 
     browser = await getSharedBrowser();
@@ -203,10 +261,15 @@ export async function POST(request: Request) {
         (window as unknown as { __EXPORT_ERROR__?: string }).__EXPORT_ERROR__,
     );
     if (errorMsg) {
+      const now = Date.now();
       routeLogger.error({
         event: "render.failed.in_page",
         errorMessage: errorMsg,
-        elapsedSeconds: msToSeconds(Date.now() - startedAt),
+        elapsedSeconds: msToSeconds(now - startedAt),
+        ...(queueWaitSeconds !== undefined ? { queueWaitSeconds } : {}),
+        ...(slotAcquiredAt !== undefined
+          ? { renderSeconds: msToSeconds(now - slotAcquiredAt) }
+          : {}),
       });
       return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
@@ -221,10 +284,13 @@ export async function POST(request: Request) {
     );
 
     const videoBuffer = Buffer.from(videoBytes);
+    const now = Date.now();
     routeLogger.info({
       event: "render.completed",
       sizeMb: Number((videoBuffer.length / BYTES_PER_MB).toFixed(2)),
-      elapsedSeconds: msToSeconds(Date.now() - startedAt),
+      elapsedSeconds: msToSeconds(now - startedAt),
+      queueWaitSeconds: queueWaitSeconds ?? 0,
+      renderSeconds: msToSeconds(now - slotAcquiredAt!),
     });
 
     return new NextResponse(videoBuffer, {
@@ -253,11 +319,16 @@ export async function POST(request: Request) {
       errorMessage = "Failed to load render page. Please try again.";
     }
 
+    const now = Date.now();
     routeLogger.error({
       event: "render.failed",
       statusCode,
       errorMessage,
-      elapsedSeconds: msToSeconds(Date.now() - startedAt),
+      elapsedSeconds: msToSeconds(now - startedAt),
+      ...(queueWaitSeconds !== undefined ? { queueWaitSeconds } : {}),
+      ...(slotAcquiredAt !== undefined
+        ? { renderSeconds: msToSeconds(now - slotAcquiredAt) }
+        : {}),
       error: serializeError(error),
     });
 
@@ -266,8 +337,8 @@ export async function POST(request: Request) {
     if (page) {
       await page.close().catch(() => {});
     }
-    if (hasSlot) {
-      releaseExportSlot();
+    if (hasSlot && clientIdForSlot) {
+      releaseExportSlot(clientIdForSlot);
     }
   }
 }

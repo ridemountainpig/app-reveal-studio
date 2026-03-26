@@ -33,3 +33,10 @@ export const exportMessages = {
   downloaded: "Downloaded!",
   failed: "Export failed.",
 } as const;
+
+export function formatExportQueueStatus(ahead: number, waitingTotal: number) {
+  if (ahead === 0) {
+    return `You're next — we'll start your export soon. (${waitingTotal} people waiting.)`;
+  }
+  return `${ahead} people ahead of you. (${waitingTotal} waiting in total)`;
+}

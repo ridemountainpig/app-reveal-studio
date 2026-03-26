@@ -13,7 +13,12 @@ import {
 import { AppReveal } from "../components/AppReveal";
 import { RevealControlsPanel } from "../components/RevealControlsPanel";
 import { useRevealControls } from "../hooks/useRevealControls";
-import { buttonStyles, mediaQueries, exportMessages } from "../utils/styles";
+import {
+  buttonStyles,
+  mediaQueries,
+  exportMessages,
+  formatExportQueueStatus,
+} from "../utils/styles";
 
 type RevealPreviewProps = {
   title: string;
@@ -206,6 +211,7 @@ const RevealPreview = memo(function RevealPreview({
 
 const SUCCESS_RESET_MS = 2400;
 const MAX_EXPORT_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const EXPORT_QUEUE_POLL_MS = 5000;
 
 function getExportPayload(
   safeTitle: string,
@@ -290,6 +296,8 @@ export default function Home() {
   const exportVideo = useCallback(async () => {
     if (isExporting) return;
 
+    const clientId = crypto.randomUUID();
+
     setIsExporting(true);
     setExportStatus(exportMessages.rendering);
 
@@ -312,33 +320,72 @@ export default function Home() {
         );
       }
 
-      const response = await fetch("/api/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: serializedPayload,
-      });
+      let pollTimer: ReturnType<typeof setInterval> | undefined;
+      pollTimer = setInterval(async () => {
+        try {
+          const res = await fetch(
+            `/api/export?clientId=${encodeURIComponent(clientId)}`,
+          );
+          if (!res.ok) return;
+          const data = (await res.json()) as {
+            phase: string;
+            ahead?: number;
+            waitingTotal: number;
+          };
+          if (data.phase === "queued" && typeof data.ahead === "number") {
+            setExportStatus(
+              formatExportQueueStatus(data.ahead, data.waitingTotal),
+            );
+          } else if (data.phase === "active") {
+            setExportStatus(exportMessages.rendering);
+            if (pollTimer !== undefined) {
+              clearInterval(pollTimer);
+              pollTimer = undefined;
+            }
+          }
+        } catch {
+          // ignore transient poll errors
+        }
+      }, EXPORT_QUEUE_POLL_MS);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || "Export failed.");
+      try {
+        const response = await fetch("/api/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, clientId }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          let message = errorText || "Export failed.";
+          try {
+            const parsed = JSON.parse(errorText) as { error?: string };
+            if (parsed.error) message = parsed.error;
+          } catch {
+            // use raw text
+          }
+          throw new Error(message);
+        }
+
+        setExportStatus(exportMessages.downloading);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "app-reveal.mp4";
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 1000);
+
+        setExportStatus(exportMessages.downloaded);
+        setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
+      } finally {
+        if (pollTimer !== undefined) clearInterval(pollTimer);
       }
-
-      setExportStatus(exportMessages.downloading);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "app-reveal.mp4";
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 1000);
-
-      setExportStatus(exportMessages.downloaded);
-      setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
     } catch (error) {
       setExportStatus(
         error instanceof Error ? error.message : exportMessages.failed,
