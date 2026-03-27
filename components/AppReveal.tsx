@@ -27,6 +27,7 @@ import {
 } from "./RevealPieces";
 import type { AppRevealProps } from "../types/reveal";
 import { useAnimationValues, useTimeline } from "../hooks/useRevealMotion";
+import { getBadgePreset } from "../utils/badgeOptions";
 
 const stageClassName =
   "flex w-full max-w-[24rem] flex-col items-center gap-y-20 text-center max-[480px]:max-w-[20rem]";
@@ -37,6 +38,7 @@ export function AppReveal({
   title,
   subtitle,
   ctaLabel = "App Store",
+  badgeVariant = "custom",
   badgePrefix = "Manage Subscription on the",
   iconCornerRadius = 60,
   restartToken = 0,
@@ -55,6 +57,7 @@ export function AppReveal({
   const normalizedDuration = clamp(durationMs, 1800, 30000);
   const normalizedPlaybackRate = clamp(playbackRate, 0.45, 2.4);
   const normalizedIconCornerRadius = clamp(iconCornerRadius, 10, 100);
+  const badgePreset = getBadgePreset(badgeVariant);
   // 100% radius can trigger visible aliasing jitter during masked animation.
   // Keep the control value as 100 for UX, but render with a near-circle radius.
   const stableIconCornerRadius =
@@ -163,10 +166,13 @@ export function AppReveal({
       </motion.div>
 
       <RevealBadge
+        variant={badgeVariant}
         prefix={badgePrefix}
         label={ctaLabel}
         iconUrl={badgeIconUrl}
         iconAlt={badgeIconAlt}
+        presetImageUrl={badgePreset?.src}
+        presetImageAlt={badgePreset?.alt}
       />
     </section>
   );

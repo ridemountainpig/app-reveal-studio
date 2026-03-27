@@ -5,6 +5,7 @@ export const initialControls: RevealControls = {
   subtitle: "Subflow - Manage Your Subscriptions",
   iconUrl: "https://subflow.ing/favicon.ico",
   iconCornerRadius: 60,
+  badgeVariant: "custom",
   badgePrefix: "Manage Subscription on the",
   badgeLabel: "subflow.ing",
   badgeIconUrl: "https://subflow.ing/favicon.ico",

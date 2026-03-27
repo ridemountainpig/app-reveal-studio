@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { initialControls } from "../utils/revealControls";
 import { readImageFileAsDataURL } from "../utils/fileReader";
+import type { BadgeVariant } from "../types/revealControls";
 
 export type TextControlKey =
   | "title"
@@ -111,6 +112,13 @@ export function useRevealControls() {
     [],
   );
 
+  const updateBadgeVariant = useCallback((value: BadgeVariant) => {
+    setControls((current) => ({
+      ...current,
+      badgeVariant: value,
+    }));
+  }, []);
+
   const safeTitle = previewControls.title.trim() || initialControls.title;
   const safeSubtitle =
     previewControls.subtitle.trim() || initialControls.subtitle;
@@ -136,12 +144,14 @@ export function useRevealControls() {
     updateTextControl,
     updateRangeControl,
     updateColorControl,
+    updateBadgeVariant,
     setUploadedIconFile: iconUpload.setUploadedFile,
     setUploadedBadgeIconFile: badgeIconUpload.setUploadedFile,
     clearUploadedIcon: iconUpload.clearUploadedFile,
     clearUploadedBadgeIcon: badgeIconUpload.clearUploadedFile,
     safeTitle,
     safeSubtitle,
+    safeBadgeVariant: previewControls.badgeVariant,
     safeBadgeLabel,
     safeBadgePrefix,
     safeIconUrl,

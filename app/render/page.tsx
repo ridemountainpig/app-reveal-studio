@@ -5,7 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { AppReveal } from "../../components/AppReveal";
 import { generateVideo } from "../../lib/exportVideo";
 import { EXPORT_SETTINGS } from "../../constants/exportSettings";
+import { isBadgeVariant } from "../../utils/badgeOptions";
 import { initialControls } from "../../utils/revealControls";
+import type { BadgeVariant } from "../../types/revealControls";
 
 const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
 
@@ -13,6 +15,7 @@ type RenderControls = {
   title: string;
   subtitle: string;
   ctaLabel: string;
+  badgeVariant: BadgeVariant;
   badgePrefix: string;
   iconUrl?: string;
   badgeIconUrl?: string;
@@ -27,10 +30,16 @@ type RenderControls = {
 function readRenderControls(
   readValue: (key: string) => string | undefined,
 ): RenderControls {
+  const badgeVariant = readValue("badgeVariant");
+
   return {
     title: readValue("title") || initialControls.title,
     subtitle: readValue("subtitle") || initialControls.subtitle,
     ctaLabel: readValue("ctaLabel") || initialControls.badgeLabel,
+    badgeVariant:
+      badgeVariant && isBadgeVariant(badgeVariant)
+        ? badgeVariant
+        : initialControls.badgeVariant,
     badgePrefix: readValue("badgePrefix") || initialControls.badgePrefix,
     iconUrl: readValue("iconUrl") || undefined,
     badgeIconUrl: readValue("badgeIconUrl") || undefined,
@@ -107,6 +116,7 @@ function RenderPageInner() {
     title,
     subtitle,
     ctaLabel,
+    badgeVariant,
     badgePrefix,
     iconUrl,
     badgeIconUrl,
@@ -157,6 +167,7 @@ function RenderPageInner() {
             title={title}
             subtitle={subtitle}
             ctaLabel={ctaLabel}
+            badgeVariant={badgeVariant}
             badgePrefix={badgePrefix}
             iconCornerRadius={iconCornerRadius}
             durationMs={durationMs}

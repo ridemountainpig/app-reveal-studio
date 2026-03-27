@@ -13,6 +13,7 @@ import {
 import { AppReveal } from "../components/AppReveal";
 import { RevealControlsPanel } from "../components/RevealControlsPanel";
 import { useRevealControls } from "../hooks/useRevealControls";
+import type { BadgeVariant } from "../types/revealControls";
 import {
   buttonStyles,
   mediaQueries,
@@ -24,6 +25,7 @@ type RevealPreviewProps = {
   title: string;
   subtitle: string;
   ctaLabel: string;
+  badgeVariant: BadgeVariant;
   badgePrefix: string;
   iconCornerRadius: number;
   durationMs: number;
@@ -46,6 +48,7 @@ const RevealPreview = memo(function RevealPreview({
   title,
   subtitle,
   ctaLabel,
+  badgeVariant,
   badgePrefix,
   iconCornerRadius,
   durationMs,
@@ -74,6 +77,7 @@ const RevealPreview = memo(function RevealPreview({
             title={title}
             subtitle={subtitle}
             ctaLabel={ctaLabel}
+            badgeVariant={badgeVariant}
             badgePrefix={badgePrefix}
             iconCornerRadius={iconCornerRadius}
             durationMs={durationMs}
@@ -216,6 +220,7 @@ const EXPORT_QUEUE_POLL_MS = 5000;
 function getExportPayload(
   safeTitle: string,
   safeSubtitle: string,
+  safeBadgeVariant: BadgeVariant,
   safeBadgeLabel: string,
   safeBadgePrefix: string,
   safeIconUrl: string | undefined,
@@ -232,6 +237,7 @@ function getExportPayload(
   return {
     title: safeTitle,
     subtitle: safeSubtitle,
+    badgeVariant: safeBadgeVariant,
     ctaLabel: safeBadgeLabel,
     badgePrefix: safeBadgePrefix,
     iconUrl: safeIconUrl ?? "",
@@ -267,12 +273,14 @@ export default function Home() {
     updateTextControl,
     updateRangeControl,
     updateColorControl,
+    updateBadgeVariant,
     setUploadedIconFile,
     setUploadedBadgeIconFile,
     clearUploadedIcon,
     clearUploadedBadgeIcon,
     safeTitle,
     safeSubtitle,
+    safeBadgeVariant,
     safeBadgeLabel,
     safeBadgePrefix,
     safeIconUrl,
@@ -305,6 +313,7 @@ export default function Home() {
       const payload = getExportPayload(
         safeTitle,
         safeSubtitle,
+        safeBadgeVariant,
         safeBadgeLabel,
         safeBadgePrefix,
         safeIconUrl,
@@ -398,6 +407,7 @@ export default function Home() {
     isExporting,
     safeTitle,
     safeSubtitle,
+    safeBadgeVariant,
     safeBadgeLabel,
     safeBadgePrefix,
     safeIconUrl,
@@ -443,6 +453,7 @@ export default function Home() {
         onTextChange={updateTextControl}
         onRangeChange={updateRangeControl}
         onColorChange={updateColorControl}
+        onBadgeVariantChange={updateBadgeVariant}
         onIconFileChange={setUploadedIconFile}
         onBadgeIconFileChange={setUploadedBadgeIconFile}
         onClearUploadedIcon={clearUploadedIcon}
@@ -453,6 +464,7 @@ export default function Home() {
         title={safeTitle}
         subtitle={safeSubtitle}
         ctaLabel={safeBadgeLabel}
+        badgeVariant={safeBadgeVariant}
         badgePrefix={safeBadgePrefix}
         iconCornerRadius={previewControls.iconCornerRadius}
         durationMs={previewControls.durationMs}

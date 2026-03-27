@@ -1,5 +1,6 @@
 import type { MotionValue } from "framer-motion";
 import type { MutableRefObject } from "react";
+import type { BadgeVariant } from "./revealControls";
 
 export type RgbColor = {
   r: number;
@@ -14,6 +15,7 @@ export type AppRevealProps = {
   title: string;
   subtitle: string;
   ctaLabel?: string;
+  badgeVariant?: BadgeVariant;
   badgePrefix?: string;
   iconCornerRadius?: number;
   restartToken?: number;

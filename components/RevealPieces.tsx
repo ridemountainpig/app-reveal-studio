@@ -15,6 +15,7 @@ import type {
   RgbColor,
   StringMotionValue,
 } from "../types/reveal";
+import type { BadgeVariant } from "../types/revealControls";
 
 interface RevealHeaderProps {
   title: string;
@@ -48,23 +49,52 @@ export function RevealHeader({ title, subtitle }: RevealHeaderProps) {
 }
 
 interface RevealBadgeProps {
+  variant?: BadgeVariant;
   prefix: string;
   label: string;
   iconUrl?: string;
   iconAlt?: string;
+  presetImageUrl?: string;
+  presetImageAlt?: string;
 }
 
 export function RevealBadge({
+  variant = "custom",
   prefix,
   label,
   iconUrl,
   iconAlt,
+  presetImageUrl,
+  presetImageAlt,
 }: RevealBadgeProps) {
-  const [imageError, setImageError] = useState(false);
+  const [failedIconUrl, setFailedIconUrl] = useState("");
+  const [failedPresetImageUrl, setFailedPresetImageUrl] = useState("");
+  const hasImageError = Boolean(iconUrl) && failedIconUrl === iconUrl;
+  const hasPresetImageError =
+    Boolean(presetImageUrl) && failedPresetImageUrl === presetImageUrl;
+  const presetBadgeClassName =
+    variant === "appStore" ? "max-w-[9.25rem]" : "max-w-[8.5rem]";
+
+  if (variant !== "custom" && presetImageUrl && !hasPresetImageError) {
+    return (
+      <div
+        className={`inline-flex items-center justify-center ${presetBadgeClassName}`}
+      >
+        <img
+          className="h-auto w-full"
+          src={presetImageUrl}
+          alt={presetImageAlt ?? ""}
+          loading="eager"
+          decoding="async"
+          onError={() => setFailedPresetImageUrl(presetImageUrl)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="inline-flex items-center gap-[0.8rem] rounded-2xl border border-white/18 bg-[linear-gradient(180deg,rgba(12,12,14,0.92),rgba(2,2,3,0.98))] px-[1.05rem] py-[0.78rem] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_26px_rgba(0,0,0,0.35)]">
-      {iconUrl && !imageError ? (
+      {iconUrl && !hasImageError ? (
         <img
           className="h-6 w-6 rounded-[0.6rem] object-cover shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_0_12px_rgba(255,255,255,0.08)]"
           src={iconUrl}
@@ -72,7 +102,7 @@ export function RevealBadge({
           referrerPolicy="no-referrer"
           loading="eager"
           decoding="async"
-          onError={() => setImageError(true)}
+          onError={() => setFailedIconUrl(iconUrl)}
         />
       ) : (
         <span

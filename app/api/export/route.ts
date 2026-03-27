@@ -8,6 +8,7 @@ const ALLOWED_PARAMS = [
   "title",
   "subtitle",
   "ctaLabel",
+  "badgeVariant",
   "badgePrefix",
   "iconUrl",
   "badgeIconUrl",
