@@ -59,9 +59,33 @@ function readRenderControls(
 declare global {
   interface Window {
     __EXPORT_DONE__?: boolean;
-    __EXPORT_RESULT__?: ArrayBuffer;
+    __EXPORT_RESULT_BASE64__?: string;
     __EXPORT_ERROR__?: string;
   }
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Failed to serialize export result."));
+        return;
+      }
+
+      const commaIndex = reader.result.indexOf(",");
+      resolve(
+        commaIndex === -1 ? reader.result : reader.result.slice(commaIndex + 1),
+      );
+    };
+
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Failed to serialize export result."));
+    };
+
+    reader.readAsDataURL(new Blob([buffer], { type: "video/mp4" }));
+  });
 }
 
 export default function RenderPage() {
@@ -144,7 +168,7 @@ function RenderPageInner() {
       try {
         const timelineControl = timelineRef.current;
         const buffer = await generateVideo(node, durationMs, timelineControl);
-        window.__EXPORT_RESULT__ = buffer;
+        window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
         window.__EXPORT_DONE__ = true;
       } catch (err) {
         window.__EXPORT_ERROR__ =

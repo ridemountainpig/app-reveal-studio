@@ -39,10 +39,24 @@ function msToSeconds(value: number) {
   return Number((value / 1000).toFixed(2));
 }
 
+function createAbortError() {
+  return new Error("Export request aborted.");
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
+
 let browserPromise: Promise<Awaited<ReturnType<typeof getBrowser>>> | null =
   null;
 let activeExportCount = 0;
-type QueueEntry = { clientId: string; grant: () => void };
+type QueueEntry = {
+  clientId: string;
+  grant: () => void;
+  cleanup: () => void;
+};
 const exportQueue: QueueEntry[] = [];
 const activeExportClientIds = new Set<string>();
 
@@ -79,20 +93,53 @@ async function getSharedBrowser() {
   return browserPromise;
 }
 
-async function acquireExportSlot(clientId: string) {
+async function acquireExportSlot(clientId: string, signal?: AbortSignal) {
+  throwIfAborted(signal);
+
   if (activeExportCount < MAX_CONCURRENT_EXPORTS) {
     activeExportCount += 1;
     activeExportClientIds.add(clientId);
     return;
   }
 
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
+    let isResolved = false;
+
+    const cleanup = () => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+
+      const queueIndex = exportQueue.indexOf(entry);
+      if (queueIndex !== -1) {
+        exportQueue.splice(queueIndex, 1);
+      }
+    };
+
+    const onAbort = () => {
+      if (isResolved) {
+        return;
+      }
+
+      cleanup();
+      reject(createAbortError());
+    };
+
     const grant = () => {
+      isResolved = true;
+      cleanup();
       activeExportCount += 1;
       activeExportClientIds.add(clientId);
       resolve();
     };
-    exportQueue.push({ clientId, grant });
+
+    const entry: QueueEntry = { clientId, grant, cleanup };
+
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    exportQueue.push(entry);
   });
 }
 
@@ -101,6 +148,7 @@ function releaseExportSlot(clientId: string) {
   activeExportCount = Math.max(0, activeExportCount - 1);
   const nextExport = exportQueue.shift();
   if (nextExport) {
+    nextExport.cleanup();
     nextExport.grant();
   }
 }
@@ -150,6 +198,7 @@ export async function POST(request: Request) {
   let clientIdForSlot: string | undefined;
   let slotAcquiredAt: number | undefined;
   let queueWaitSeconds: number | undefined;
+  let removeAbortListener: (() => void) | undefined;
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   const routeLogger = logger.child({
@@ -221,13 +270,24 @@ export async function POST(request: Request) {
     });
 
     const beforeSlotAcquire = Date.now();
-    await acquireExportSlot(clientIdForSlot);
+    await acquireExportSlot(clientIdForSlot, request.signal);
     slotAcquiredAt = Date.now();
     queueWaitSeconds = msToSeconds(slotAcquiredAt - beforeSlotAcquire);
     hasSlot = true;
 
+    const onAbort = () => {
+      void page?.close().catch(() => {});
+    };
+    request.signal.addEventListener("abort", onAbort, { once: true });
+    removeAbortListener = () => {
+      request.signal.removeEventListener("abort", onAbort);
+    };
+    throwIfAborted(request.signal);
+
     browser = await getSharedBrowser();
+    throwIfAborted(request.signal);
     page = await browser.newPage();
+    throwIfAborted(request.signal);
     await page.setViewport({ width: 1080, height: 1920 });
     page.on("pageerror", (error) => {
       routeLogger.error({
@@ -236,12 +296,7 @@ export async function POST(request: Request) {
       });
     });
 
-    await page.goto(baseUrl, {
-      waitUntil: "domcontentloaded",
-      timeout: PAGE_LOAD_TIMEOUT,
-    });
-
-    await page.evaluate(
+    await page.evaluateOnNewDocument(
       ({ storageKey, payload }) => {
         window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
       },
@@ -252,10 +307,12 @@ export async function POST(request: Request) {
       waitUntil: "domcontentloaded",
       timeout: PAGE_LOAD_TIMEOUT,
     });
+    throwIfAborted(request.signal);
 
     await page.waitForFunction("window.__EXPORT_DONE__ === true", {
       timeout: BROWSER_TIMEOUT,
     });
+    throwIfAborted(request.signal);
 
     const errorMsg = await page.evaluate(
       () =>
@@ -275,16 +332,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
 
-    const videoBytes = await page.evaluate(() =>
-      Array.from(
-        new Uint8Array(
-          (window as unknown as { __EXPORT_RESULT__: ArrayBuffer })
-            .__EXPORT_RESULT__,
-        ),
-      ),
+    const videoBase64 = await page.evaluate(
+      () =>
+        (window as unknown as { __EXPORT_RESULT_BASE64__?: string })
+          .__EXPORT_RESULT_BASE64__,
     );
+    throwIfAborted(request.signal);
 
-    const videoBuffer = Buffer.from(videoBytes);
+    if (!videoBase64) {
+      throw new Error("Export result missing.");
+    }
+
+    const videoBuffer = Buffer.from(videoBase64, "base64");
     const now = Date.now();
     routeLogger.info({
       event: "render.completed",
@@ -306,12 +365,18 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Internal server error.";
+    const now = Date.now();
+    const wasAborted =
+      request.signal.aborted || message === "Export request aborted.";
 
     // Provide more specific error messages
     let statusCode = 500;
     let errorMessage = message;
 
-    if (message.includes("Timeout")) {
+    if (wasAborted) {
+      statusCode = 499;
+      errorMessage = "Export request cancelled.";
+    } else if (message.includes("Timeout")) {
       statusCode = 504;
       errorMessage =
         "Video generation timed out. Please try with shorter duration.";
@@ -320,7 +385,20 @@ export async function POST(request: Request) {
       errorMessage = "Failed to load render page. Please try again.";
     }
 
-    const now = Date.now();
+    if (statusCode === 499) {
+      routeLogger.info({
+        event: "render.cancelled",
+        phase: hasSlot ? "active" : "queued",
+        elapsedSeconds: msToSeconds(now - startedAt),
+        ...(queueWaitSeconds !== undefined ? { queueWaitSeconds } : {}),
+        ...(slotAcquiredAt !== undefined
+          ? { renderSeconds: msToSeconds(now - slotAcquiredAt) }
+          : {}),
+      });
+
+      return NextResponse.json({ error: errorMessage }, { status: statusCode });
+    }
+
     routeLogger.error({
       event: "render.failed",
       statusCode,
@@ -335,6 +413,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: errorMessage }, { status: statusCode });
   } finally {
+    removeAbortListener?.();
     if (page) {
       await page.close().catch(() => {});
     }

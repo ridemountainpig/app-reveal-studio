@@ -40,8 +40,10 @@ type RevealPreviewProps = {
   previewRef: RefObject<HTMLDivElement | null>;
   onReloadAnimation: () => void;
   onExportVideo: () => void;
+  onCancelExport: () => void;
   exportStatus: string;
   isExporting: boolean;
+  isCancelling: boolean;
 };
 
 const RevealPreview = memo(function RevealPreview({
@@ -63,8 +65,10 @@ const RevealPreview = memo(function RevealPreview({
   previewRef,
   onReloadAnimation,
   onExportVideo,
+  onCancelExport,
   exportStatus,
   isExporting,
+  isCancelling,
 }: RevealPreviewProps) {
   return (
     <>
@@ -105,6 +109,7 @@ const RevealPreview = memo(function RevealPreview({
               onClick={onReloadAnimation}
               className={buttonStyles.reload}
               aria-label="Reload Animation"
+              disabled={isExporting}
             >
               <svg
                 className="h-4 w-4 shrink-0"
@@ -133,36 +138,47 @@ const RevealPreview = memo(function RevealPreview({
 
             <motion.button
               type="button"
-              whileHover={isExporting ? undefined : { scale: 1.03 }}
-              whileTap={isExporting ? undefined : { scale: 0.98 }}
-              onClick={onExportVideo}
-              disabled={isExporting}
+              whileHover={isCancelling ? undefined : { scale: 1.03 }}
+              whileTap={isCancelling ? undefined : { scale: 0.98 }}
+              onClick={isExporting ? onCancelExport : onExportVideo}
+              disabled={isCancelling}
               className={buttonStyles.export}
               aria-label={
-                isExporting ? "Rendering Animation" : "Download Animation"
+                isCancelling
+                  ? "Cancelling export"
+                  : isExporting
+                    ? "Cancel export"
+                    : "Download Animation"
               }
             >
               {isExporting ? (
                 <svg
-                  className="h-4 w-4 shrink-0 animate-spin"
-                  viewBox="0 0 20 20"
+                  className="h-4 w-4 shrink-0"
+                  viewBox="0 0 24 24"
                   fill="none"
                   xmlns="http://www.w3.org/2000/svg"
                   aria-hidden="true"
                 >
                   <circle
-                    cx="10"
-                    cy="10"
-                    r="6.5"
+                    cx="12"
+                    cy="12"
+                    r="10"
                     stroke="currentColor"
-                    strokeWidth="1.8"
-                    opacity="0.24"
+                    strokeWidth="2"
                   />
                   <path
-                    d="M10 3.5A6.5 6.5 0 0 1 16.5 10"
+                    d="m15 9-6 6"
                     stroke="currentColor"
-                    strokeWidth="1.8"
+                    strokeWidth="2"
                     strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="m9 9 6 6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   />
                 </svg>
               ) : (
@@ -197,16 +213,48 @@ const RevealPreview = memo(function RevealPreview({
                 </svg>
               )}
               <span className="sm:hidden">
-                {isExporting ? "Rendering..." : "Download"}
+                {isCancelling
+                  ? "Cancelling..."
+                  : isExporting
+                    ? "Cancel"
+                    : "Download"}
               </span>
               <span className="hidden sm:inline">
-                {isExporting ? "Rendering Animation..." : "Download Animation"}
+                {isCancelling
+                  ? "Cancelling..."
+                  : isExporting
+                    ? "Cancel Download"
+                    : "Download Animation"}
               </span>
             </motion.button>
           </div>
-          <p className="min-h-5 text-center text-[0.76rem] font-medium tracking-[0.03em] text-white/52">
-            {exportStatus}
-          </p>
+          <div className="flex min-h-5 items-center justify-center gap-2 text-center text-[0.76rem] font-medium tracking-[0.03em] text-white/52">
+            {isExporting ? (
+              <svg
+                className="h-3.5 w-3.5 shrink-0 animate-spin"
+                viewBox="0 0 20 20"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="6.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  opacity="0.24"
+                />
+                <path
+                  d="M10 3.5A6.5 6.5 0 0 1 16.5 10"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : null}
+            <p>{exportStatus}</p>
+          </div>
         </div>
       </section>
     </>
@@ -253,6 +301,8 @@ function getExportPayload(
 
 export default function Home() {
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const exportAbortControllerRef = useRef<AbortController | null>(null);
+  const stopPollingRef = useRef<(() => void) | null>(null);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
 
   useEffect(() => {
@@ -260,6 +310,7 @@ export default function Home() {
   }, []);
   const [animationReloadKey, setAnimationReloadKey] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const {
     controls,
@@ -301,12 +352,34 @@ export default function Home() {
     });
   }, []);
 
+  const cancelExport = useCallback(() => {
+    const controller = exportAbortControllerRef.current;
+    if (!controller || controller.signal.aborted) return;
+
+    setIsCancelling(true);
+    setExportStatus("Cancelling export...");
+    stopPollingRef.current?.();
+    controller.abort();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopPollingRef.current?.();
+      stopPollingRef.current = null;
+      exportAbortControllerRef.current?.abort();
+      exportAbortControllerRef.current = null;
+    };
+  }, []);
+
   const exportVideo = useCallback(async () => {
     if (isExporting) return;
 
     const clientId = crypto.randomUUID();
+    const exportController = new AbortController();
+    exportAbortControllerRef.current = exportController;
 
     setIsExporting(true);
+    setIsCancelling(false);
     setExportStatus(exportMessages.rendering);
 
     try {
@@ -329,38 +402,72 @@ export default function Home() {
         );
       }
 
-      let pollTimer: ReturnType<typeof setInterval> | undefined;
-      pollTimer = setInterval(async () => {
+      let pollTimer: ReturnType<typeof setTimeout> | undefined;
+      let pollController: AbortController | undefined;
+      let shouldPoll = true;
+
+      const stopPolling = () => {
+        shouldPoll = false;
+        if (pollTimer !== undefined) {
+          clearTimeout(pollTimer);
+          pollTimer = undefined;
+        }
+        if (pollController) {
+          pollController.abort();
+          pollController = undefined;
+        }
+      };
+      stopPollingRef.current = stopPolling;
+
+      const pollQueueStatus = async () => {
+        if (!shouldPoll) return;
+
+        const controller = new AbortController();
+        pollController = controller;
+
         try {
           const res = await fetch(
             `/api/export?clientId=${encodeURIComponent(clientId)}`,
+            {
+              cache: "no-store",
+              signal: controller.signal,
+            },
           );
-          if (!res.ok) return;
-          const data = (await res.json()) as {
-            phase: string;
-            ahead?: number;
-            waitingTotal: number;
-          };
-          if (data.phase === "queued" && typeof data.ahead === "number") {
-            setExportStatus(
-              formatExportQueueStatus(data.ahead, data.waitingTotal),
-            );
-          } else if (data.phase === "active") {
-            setExportStatus(exportMessages.rendering);
-            if (pollTimer !== undefined) {
-              clearInterval(pollTimer);
-              pollTimer = undefined;
+          if (res.ok) {
+            const data = (await res.json()) as {
+              phase: string;
+              ahead?: number;
+              waitingTotal: number;
+            };
+            if (data.phase === "queued" && typeof data.ahead === "number") {
+              setExportStatus(
+                formatExportQueueStatus(data.ahead, data.waitingTotal),
+              );
+            } else if (data.phase === "active") {
+              setExportStatus(exportMessages.rendering);
+              stopPolling();
             }
           }
         } catch {
+          if (controller.signal.aborted) return;
           // ignore transient poll errors
+        } finally {
+          if (pollController === controller) {
+            pollController = undefined;
+          }
         }
-      }, EXPORT_QUEUE_POLL_MS);
+        if (shouldPoll) {
+          pollTimer = setTimeout(pollQueueStatus, EXPORT_QUEUE_POLL_MS);
+        }
+      };
+
+      pollTimer = setTimeout(pollQueueStatus, EXPORT_QUEUE_POLL_MS);
 
       try {
         const response = await fetch("/api/export", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: exportController.signal,
           body: JSON.stringify({ ...payload, clientId }),
         });
 
@@ -393,14 +500,27 @@ export default function Home() {
         setExportStatus(exportMessages.downloaded);
         setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
       } finally {
-        if (pollTimer !== undefined) clearInterval(pollTimer);
+        stopPolling();
+        if (stopPollingRef.current === stopPolling) {
+          stopPollingRef.current = null;
+        }
       }
     } catch (error) {
+      if (exportController.signal.aborted) {
+        setExportStatus("Export cancelled.");
+        setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
+        return;
+      }
+
       setExportStatus(
         error instanceof Error ? error.message : exportMessages.failed,
       );
       setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
     } finally {
+      if (exportAbortControllerRef.current === exportController) {
+        exportAbortControllerRef.current = null;
+      }
+      setIsCancelling(false);
       setIsExporting(false);
     }
   }, [
@@ -479,8 +599,10 @@ export default function Home() {
         previewRef={previewRef}
         onReloadAnimation={reloadAnimation}
         onExportVideo={exportVideo}
+        onCancelExport={cancelExport}
         exportStatus={exportStatus}
         isExporting={isExporting}
+        isCancelling={isCancelling}
       />
     </main>
   );
