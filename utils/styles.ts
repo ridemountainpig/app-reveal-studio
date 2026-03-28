@@ -8,6 +8,7 @@ export const buttonStyles = {
 } as const;
 
 export const panelStyles = {
+  card: "rounded-2xl border border-white/8 bg-white/3 p-3",
   label:
     "text-[0.64rem] font-semibold tracking-[0.08em] text-white/42 uppercase",
   input:

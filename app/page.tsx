@@ -1,317 +1,17 @@
 "use client";
 
 import { motion } from "framer-motion";
-import {
-  memo,
-  startTransition,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
-import { AppReveal } from "../components/AppReveal";
+import { startTransition, useCallback, useState } from "react";
+import { RevealPreview } from "../components/RevealPreview";
 import { RevealControlsPanel } from "../components/RevealControlsPanel";
+import { useExportVideo } from "../hooks/useExportVideo";
 import { useRevealControls } from "../hooks/useRevealControls";
-import type { BadgeVariant } from "../types/revealControls";
-import {
-  buttonStyles,
-  mediaQueries,
-  exportMessages,
-  formatExportQueueStatus,
-} from "../utils/styles";
-
-type RevealPreviewProps = {
-  title: string;
-  subtitle: string;
-  ctaLabel: string;
-  badgeVariant: BadgeVariant;
-  badgePrefix: string;
-  iconCornerRadius: number;
-  durationMs: number;
-  playbackRate: number;
-  restartToken: number;
-  iconUrl?: string;
-  badgeIconUrl?: string;
-  glowColor: string;
-  rimColor: string;
-  grayColor: string;
-  previewPadding: string;
-  previewRef: RefObject<HTMLDivElement | null>;
-  onReloadAnimation: () => void;
-  onExportVideo: () => void;
-  onCancelExport: () => void;
-  exportStatus: string;
-  isExporting: boolean;
-  isCancelling: boolean;
-};
-
-const RevealPreview = memo(function RevealPreview({
-  title,
-  subtitle,
-  ctaLabel,
-  badgeVariant,
-  badgePrefix,
-  iconCornerRadius,
-  durationMs,
-  playbackRate,
-  restartToken,
-  iconUrl,
-  badgeIconUrl,
-  glowColor,
-  rimColor,
-  grayColor,
-  previewPadding,
-  previewRef,
-  onReloadAnimation,
-  onExportVideo,
-  onCancelExport,
-  exportStatus,
-  isExporting,
-  isCancelling,
-}: RevealPreviewProps) {
-  return (
-    <>
-      <div className={`flex w-full flex-col items-center ${previewPadding}`}>
-        <div
-          ref={previewRef}
-          className="px-[clamp(1.5rem,5vw,3rem)] py-[clamp(2rem,6vw,4rem)]"
-        >
-          <AppReveal
-            title={title}
-            subtitle={subtitle}
-            ctaLabel={ctaLabel}
-            badgeVariant={badgeVariant}
-            badgePrefix={badgePrefix}
-            iconCornerRadius={iconCornerRadius}
-            durationMs={durationMs}
-            playbackRate={playbackRate}
-            restartToken={restartToken}
-            iconUrl={iconUrl}
-            iconAlt={title}
-            badgeIconUrl={badgeIconUrl}
-            badgeIconAlt={ctaLabel}
-            glowColor={glowColor}
-            rimColor={rimColor}
-            grayColor={grayColor}
-          />
-        </div>
-      </div>
-      <section
-        className={`fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 sm:bottom-8 ${previewPadding}`}
-      >
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <motion.button
-              type="button"
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={onReloadAnimation}
-              className={buttonStyles.reload}
-              aria-label="Reload Animation"
-              disabled={isExporting}
-            >
-              <svg
-                className="h-4 w-4 shrink-0"
-                viewBox="0 0 20 20"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-              >
-                <path
-                  d="M15.833 10A5.833 5.833 0 1 1 14.125 5.875"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M15.833 3.333V6.667H12.5"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              Reload
-            </motion.button>
-
-            <motion.button
-              type="button"
-              whileHover={isCancelling ? undefined : { scale: 1.03 }}
-              whileTap={isCancelling ? undefined : { scale: 0.98 }}
-              onClick={isExporting ? onCancelExport : onExportVideo}
-              disabled={isCancelling}
-              className={buttonStyles.export}
-              aria-label={
-                isCancelling
-                  ? "Cancelling export"
-                  : isExporting
-                    ? "Cancel export"
-                    : "Download Animation"
-              }
-            >
-              {isExporting ? (
-                <svg
-                  className="h-4 w-4 shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                  <path
-                    d="m15 9-6 6"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="m9 9 6 6"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  className="h-4 w-4 shrink-0"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M10 3.333V12.5"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M6.667 9.583L10 12.917L13.333 9.583"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M4.167 15.833H15.833"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-              <span className="sm:hidden">
-                {isCancelling
-                  ? "Cancelling..."
-                  : isExporting
-                    ? "Cancel"
-                    : "Download"}
-              </span>
-              <span className="hidden sm:inline">
-                {isCancelling
-                  ? "Cancelling..."
-                  : isExporting
-                    ? "Cancel Download"
-                    : "Download Animation"}
-              </span>
-            </motion.button>
-          </div>
-          <div className="flex min-h-5 items-center justify-center gap-2 text-center text-[0.76rem] font-medium tracking-[0.03em] text-white/52">
-            {isExporting ? (
-              <svg
-                className="h-3.5 w-3.5 shrink-0 animate-spin"
-                viewBox="0 0 20 20"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-              >
-                <circle
-                  cx="10"
-                  cy="10"
-                  r="6.5"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  opacity="0.24"
-                />
-                <path
-                  d="M10 3.5A6.5 6.5 0 0 1 16.5 10"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                />
-              </svg>
-            ) : null}
-            <p>{exportStatus}</p>
-          </div>
-        </div>
-      </section>
-    </>
-  );
-});
-
-const SUCCESS_RESET_MS = 2400;
-const MAX_EXPORT_PAYLOAD_BYTES = 4 * 1024 * 1024;
-const EXPORT_QUEUE_POLL_MS = 5000;
-
-function getExportPayload(
-  safeTitle: string,
-  safeSubtitle: string,
-  safeBadgeVariant: BadgeVariant,
-  safeBadgeLabel: string,
-  safeBadgePrefix: string,
-  safeIconUrl: string | undefined,
-  safeBadgeIconUrl: string | undefined,
-  previewControls: {
-    iconCornerRadius: number;
-    durationMs: number;
-    playbackRate: number;
-    glowColor: string;
-    rimColor: string;
-    grayColor: string;
-  },
-) {
-  return {
-    title: safeTitle,
-    subtitle: safeSubtitle,
-    badgeVariant: safeBadgeVariant,
-    ctaLabel: safeBadgeLabel,
-    badgePrefix: safeBadgePrefix,
-    iconUrl: safeIconUrl ?? "",
-    badgeIconUrl: safeBadgeIconUrl ?? "",
-    iconCornerRadius: String(previewControls.iconCornerRadius),
-    durationMs: String(previewControls.durationMs),
-    playbackRate: String(previewControls.playbackRate),
-    glowColor: previewControls.glowColor,
-    rimColor: previewControls.rimColor,
-    grayColor: previewControls.grayColor,
-  };
-}
+import { getExportPayload } from "../utils/exportPayload";
+import { buttonStyles } from "../utils/styles";
 
 export default function Home() {
-  const previewRef = useRef<HTMLDivElement | null>(null);
-  const exportAbortControllerRef = useRef<AbortController | null>(null);
-  const stopPollingRef = useRef<(() => void) | null>(null);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
-
-  useEffect(() => {
-    setIsPanelCollapsed(!window.matchMedia(mediaQueries.desktopMin).matches);
-  }, []);
   const [animationReloadKey, setAnimationReloadKey] = useState(0);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
-  const [exportStatus, setExportStatus] = useState("");
   const {
     controls,
     previewControls,
@@ -325,6 +25,7 @@ export default function Home() {
     updateRangeControl,
     updateColorControl,
     updateBadgeVariant,
+    updateLayerTransform,
     setUploadedIconFile,
     setUploadedBadgeIconFile,
     clearUploadedIcon,
@@ -336,6 +37,7 @@ export default function Home() {
     safeBadgePrefix,
     safeIconUrl,
     safeBadgeIconUrl,
+    safeLayerTransforms,
   } = useRevealControls();
 
   const toggleCollapsed = useCallback(() => {
@@ -352,179 +54,7 @@ export default function Home() {
     });
   }, []);
 
-  const cancelExport = useCallback(() => {
-    const controller = exportAbortControllerRef.current;
-    if (!controller || controller.signal.aborted) return;
-
-    setIsCancelling(true);
-    setExportStatus("Cancelling export...");
-    stopPollingRef.current?.();
-    controller.abort();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      stopPollingRef.current?.();
-      stopPollingRef.current = null;
-      exportAbortControllerRef.current?.abort();
-      exportAbortControllerRef.current = null;
-    };
-  }, []);
-
-  const exportVideo = useCallback(async () => {
-    if (isExporting) return;
-
-    const clientId = crypto.randomUUID();
-    const exportController = new AbortController();
-    exportAbortControllerRef.current = exportController;
-
-    setIsExporting(true);
-    setIsCancelling(false);
-    setExportStatus(exportMessages.rendering);
-
-    try {
-      const payload = getExportPayload(
-        safeTitle,
-        safeSubtitle,
-        safeBadgeVariant,
-        safeBadgeLabel,
-        safeBadgePrefix,
-        safeIconUrl,
-        safeBadgeIconUrl,
-        previewControls,
-      );
-      const serializedPayload = JSON.stringify(payload);
-      const payloadBytes = new TextEncoder().encode(serializedPayload).length;
-
-      if (payloadBytes > MAX_EXPORT_PAYLOAD_BYTES) {
-        throw new Error(
-          "Images are too large to export. Use smaller files or lower-resolution icons.",
-        );
-      }
-
-      let pollTimer: ReturnType<typeof setTimeout> | undefined;
-      let pollController: AbortController | undefined;
-      let shouldPoll = true;
-
-      const stopPolling = () => {
-        shouldPoll = false;
-        if (pollTimer !== undefined) {
-          clearTimeout(pollTimer);
-          pollTimer = undefined;
-        }
-        if (pollController) {
-          pollController.abort();
-          pollController = undefined;
-        }
-      };
-      stopPollingRef.current = stopPolling;
-
-      const pollQueueStatus = async () => {
-        if (!shouldPoll) return;
-
-        const controller = new AbortController();
-        pollController = controller;
-
-        try {
-          const res = await fetch(
-            `/api/export?clientId=${encodeURIComponent(clientId)}`,
-            {
-              cache: "no-store",
-              signal: controller.signal,
-            },
-          );
-          if (res.ok) {
-            const data = (await res.json()) as {
-              phase: string;
-              ahead?: number;
-              waitingTotal: number;
-            };
-            if (data.phase === "queued" && typeof data.ahead === "number") {
-              setExportStatus(
-                formatExportQueueStatus(data.ahead, data.waitingTotal),
-              );
-            } else if (data.phase === "active") {
-              setExportStatus(exportMessages.rendering);
-              stopPolling();
-            }
-          }
-        } catch {
-          if (controller.signal.aborted) return;
-          // ignore transient poll errors
-        } finally {
-          if (pollController === controller) {
-            pollController = undefined;
-          }
-        }
-        if (shouldPoll) {
-          pollTimer = setTimeout(pollQueueStatus, EXPORT_QUEUE_POLL_MS);
-        }
-      };
-
-      pollTimer = setTimeout(pollQueueStatus, EXPORT_QUEUE_POLL_MS);
-
-      try {
-        const response = await fetch("/api/export", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: exportController.signal,
-          body: JSON.stringify({ ...payload, clientId }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          let message = errorText || "Export failed.";
-          try {
-            const parsed = JSON.parse(errorText) as { error?: string };
-            if (parsed.error) message = parsed.error;
-          } catch {
-            // use raw text
-          }
-          throw new Error(message);
-        }
-
-        setExportStatus(exportMessages.downloading);
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "app-reveal.mp4";
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 1000);
-
-        setExportStatus(exportMessages.downloaded);
-        setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
-      } finally {
-        stopPolling();
-        if (stopPollingRef.current === stopPolling) {
-          stopPollingRef.current = null;
-        }
-      }
-    } catch (error) {
-      if (exportController.signal.aborted) {
-        setExportStatus("Export cancelled.");
-        setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
-        return;
-      }
-
-      setExportStatus(
-        error instanceof Error ? error.message : exportMessages.failed,
-      );
-      setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
-    } finally {
-      if (exportAbortControllerRef.current === exportController) {
-        exportAbortControllerRef.current = null;
-      }
-      setIsCancelling(false);
-      setIsExporting(false);
-    }
-  }, [
-    isExporting,
+  const exportPayload = getExportPayload({
     safeTitle,
     safeSubtitle,
     safeBadgeVariant,
@@ -533,12 +63,17 @@ export default function Home() {
     safeIconUrl,
     safeBadgeIconUrl,
     previewControls,
-  ]);
+  });
+
+  const { isExporting, isCancelling, exportStatus, exportVideo, cancelExport } =
+    useExportVideo({
+      payload: exportPayload,
+    });
 
   const previewPadding = isPanelCollapsed ? "xl:pr-[7.5rem]" : "xl:pr-[27rem]";
 
   return (
-    <main className="relative grid min-h-screen place-items-center overflow-x-hidden overflow-y-auto bg-black px-[clamp(1.5rem,5vw,3rem)] py-[clamp(1.5rem,5vw,3rem)]">
+    <main className="relative grid min-h-screen place-items-center overflow-x-auto overflow-y-auto bg-black">
       <motion.a
         href="https://github.com/ridemountainpig/app-reveal-studio"
         target="_blank"
@@ -595,8 +130,9 @@ export default function Home() {
         glowColor={previewControls.glowColor}
         rimColor={previewControls.rimColor}
         grayColor={previewControls.grayColor}
+        layerTransforms={safeLayerTransforms}
         previewPadding={previewPadding}
-        previewRef={previewRef}
+        onLayerTransformChange={updateLayerTransform}
         onReloadAnimation={reloadAnimation}
         onExportVideo={exportVideo}
         onCancelExport={cancelExport}

@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { initialControls } from "../utils/revealControls";
 import { readImageFileAsDataURL } from "../utils/fileReader";
-import type { BadgeVariant } from "../types/revealControls";
+import type {
+  BadgeVariant,
+  EditableLayerId,
+  LayerTransform,
+  RevealControls,
+} from "../types/revealControls";
 
 export type TextControlKey =
   | "title"
@@ -16,6 +21,47 @@ export type RangeControlKey =
   | "playbackRate"
   | "iconCornerRadius";
 export type ColorControlKey = "glowColor" | "rimColor" | "grayColor";
+
+type RevealControlsAction =
+  | { type: "text"; key: TextControlKey; value: string }
+  | { type: "range"; key: RangeControlKey; value: number }
+  | { type: "color"; key: ColorControlKey; value: string }
+  | { type: "badgeVariant"; value: BadgeVariant }
+  | {
+      type: "layerTransform";
+      layerId: EditableLayerId;
+      nextTransform: LayerTransform;
+    };
+
+function revealControlsReducer(
+  state: RevealControls,
+  action: RevealControlsAction,
+): RevealControls {
+  switch (action.type) {
+    case "text":
+    case "range":
+    case "color":
+      return {
+        ...state,
+        [action.key]: action.value,
+      };
+    case "badgeVariant":
+      return {
+        ...state,
+        badgeVariant: action.value,
+      };
+    case "layerTransform":
+      return {
+        ...state,
+        layers: {
+          ...state.layers,
+          [action.layerId]: action.nextTransform,
+        },
+      };
+    default:
+      return state;
+  }
+}
 
 function useDataUrlUpload(errorLabel: string) {
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -77,47 +123,49 @@ function useDataUrlUpload(errorLabel: string) {
 }
 
 export function useRevealControls() {
-  const [controls, setControls] = useState(initialControls);
+  const [controls, dispatch] = useReducer(
+    revealControlsReducer,
+    initialControls,
+  );
   const previewControls = controls;
   const iconUpload = useDataUrlUpload("icon file");
   const badgeIconUpload = useDataUrlUpload("badge icon file");
 
   const updateTextControl = useCallback(
     (key: TextControlKey, value: string) => {
-      setControls((current) => ({
-        ...current,
-        [key]: value,
-      }));
+      dispatch({ type: "text", key, value });
     },
     [],
   );
 
   const updateRangeControl = useCallback(
     (key: RangeControlKey, value: number) => {
-      setControls((current) => ({
-        ...current,
-        [key]: value,
-      }));
+      dispatch({ type: "range", key, value });
     },
     [],
   );
 
   const updateColorControl = useCallback(
     (key: ColorControlKey, value: string) => {
-      setControls((current) => ({
-        ...current,
-        [key]: value,
-      }));
+      dispatch({ type: "color", key, value });
     },
     [],
   );
 
   const updateBadgeVariant = useCallback((value: BadgeVariant) => {
-    setControls((current) => ({
-      ...current,
-      badgeVariant: value,
-    }));
+    dispatch({ type: "badgeVariant", value });
   }, []);
+
+  const updateLayerTransform = useCallback(
+    (layerId: EditableLayerId, nextTransform: LayerTransform) => {
+      dispatch({
+        type: "layerTransform",
+        layerId,
+        nextTransform,
+      });
+    },
+    [],
+  );
 
   const safeTitle = previewControls.title.trim() || initialControls.title;
   const safeSubtitle =
@@ -145,6 +193,7 @@ export function useRevealControls() {
     updateRangeControl,
     updateColorControl,
     updateBadgeVariant,
+    updateLayerTransform,
     setUploadedIconFile: iconUpload.setUploadedFile,
     setUploadedBadgeIconFile: badgeIconUpload.setUploadedFile,
     clearUploadedIcon: iconUpload.clearUploadedFile,
@@ -156,5 +205,6 @@ export function useRevealControls() {
     safeBadgePrefix,
     safeIconUrl,
     safeBadgeIconUrl,
+    safeLayerTransforms: previewControls.layers,
   };
 }

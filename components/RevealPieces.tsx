@@ -22,7 +22,11 @@ interface RevealHeaderProps {
   subtitle: string;
 }
 
-export function RevealHeader({ title, subtitle }: RevealHeaderProps) {
+type RevealTitleProps = {
+  title: string;
+};
+
+export function RevealTitle({ title }: RevealTitleProps) {
   const titleLength = title.trim().length;
   const titleFontSize =
     titleLength > 42
@@ -34,16 +38,32 @@ export function RevealHeader({ title, subtitle }: RevealHeaderProps) {
           : "clamp(2.35rem, 7vw, 3.65rem)";
 
   return (
+    <h1
+      className="m-0 max-w-none px-2 text-center leading-[0.95] font-bold tracking-[-0.05em] whitespace-nowrap text-[rgba(255,255,255,0.96)] [text-shadow:0_0_26px_rgba(255,255,255,0.08)]"
+      style={{ fontSize: titleFontSize }}
+    >
+      {title}
+    </h1>
+  );
+}
+
+type RevealSubtitleProps = {
+  subtitle: string;
+};
+
+export function RevealSubtitle({ subtitle }: RevealSubtitleProps) {
+  return (
+    <p className="m-0 max-w-none text-center text-[clamp(0.95rem,2.8vw,1.3rem)] font-semibold tracking-[-0.02em] whitespace-nowrap text-[rgba(227,230,235,0.8)]">
+      {subtitle}
+    </p>
+  );
+}
+
+export function RevealHeader({ title, subtitle }: RevealHeaderProps) {
+  return (
     <header className="flex flex-col items-center gap-[0.45rem]">
-      <h1
-        className="m-0 px-2 text-center leading-[0.95] font-bold tracking-[-0.05em] text-[rgba(255,255,255,0.96)] [text-shadow:0_0_26px_rgba(255,255,255,0.08)]"
-        style={{ fontSize: titleFontSize }}
-      >
-        {title}
-      </h1>
-      <p className="m-0 text-[clamp(0.95rem,2.8vw,1.3rem)] font-semibold tracking-[-0.02em] text-[rgba(227,230,235,0.8)]">
-        {subtitle}
-      </p>
+      <RevealTitle title={title} />
+      <RevealSubtitle subtitle={subtitle} />
     </header>
   );
 }
@@ -80,6 +100,7 @@ export function RevealBadge({
       <div
         className={`inline-flex items-center justify-center ${presetBadgeClassName}`}
       >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className="h-auto w-full"
           src={presetImageUrl}
@@ -95,6 +116,7 @@ export function RevealBadge({
   return (
     <div className="inline-flex items-center gap-[0.8rem] rounded-2xl border border-white/18 bg-[linear-gradient(180deg,rgba(12,12,14,0.92),rgba(2,2,3,0.98))] px-[1.05rem] py-[0.78rem] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_26px_rgba(0,0,0,0.35)]">
       {iconUrl && !hasImageError ? (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           className="h-6 w-6 rounded-[0.6rem] object-cover shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_0_12px_rgba(255,255,255,0.08)]"
           src={iconUrl}
@@ -111,10 +133,10 @@ export function RevealBadge({
         />
       )}
       <span className="flex flex-col items-start text-left leading-none">
-        <span className="block text-left text-[0.62rem] font-semibold tracking-[0.05em] text-white/[0.58] uppercase">
+        <span className="block max-w-none text-left text-[0.62rem] font-semibold tracking-[0.05em] whitespace-nowrap text-white/[0.58] uppercase">
           {prefix}
         </span>
-        <span className="mt-[0.2rem] block text-left text-[0.96rem] font-bold tracking-[-0.02em] text-white/96">
+        <span className="mt-[0.2rem] block max-w-none text-left text-[0.96rem] font-bold tracking-[-0.02em] whitespace-nowrap text-white/96">
           {label}
         </span>
       </span>

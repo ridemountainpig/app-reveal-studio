@@ -21,18 +21,54 @@ import {
 } from "../utils/revealMath";
 import {
   RevealBadge,
-  RevealHeader,
   RevealIcon,
+  RevealSubtitle,
   RevealSurface,
+  RevealTitle,
 } from "./RevealPieces";
 import type { AppRevealProps } from "../types/reveal";
 import { useAnimationValues, useTimeline } from "../hooks/useRevealMotion";
+import { useLayerGestures } from "../hooks/useLayerGestures";
 import { getBadgePreset } from "../utils/badgeOptions";
+import { createDefaultLayerTransforms } from "../utils/revealControls";
+import {
+  iconSizePx,
+  layerAnchors,
+  layerLabelMap,
+} from "./app-reveal/layerGeometry";
+import { EditableLayer } from "./app-reveal/EditableLayer";
 
-const stageClassName =
-  "flex w-full max-w-[24rem] flex-col items-center gap-y-20 text-center max-[480px]:max-w-[20rem]";
 const iconLayerClassName = "absolute inset-0 rounded-[inherit]";
-const iconSizePx = 176;
+
+function getLayerClassName({
+  editable,
+  isSelected,
+  isGesturing,
+  baseClassName,
+  selectedClassName,
+}: {
+  editable: boolean;
+  isSelected: boolean;
+  isGesturing: boolean;
+  baseClassName: string;
+  selectedClassName: string;
+}) {
+  return `${baseClassName} ${
+    isGesturing ? "transition-none cursor-grabbing" : "transition"
+  } ${
+    editable
+      ? isGesturing
+        ? "touch-none select-none"
+        : "cursor-move touch-none select-none"
+      : "cursor-default"
+  } ${
+    isSelected
+      ? selectedClassName
+      : editable
+        ? "hover:border-white/12 hover:bg-white/[0.03]"
+        : ""
+  }`;
+}
 
 export function AppReveal({
   title,
@@ -51,6 +87,9 @@ export function AppReveal({
   glowColor = "#ffffff",
   rimColor = "#ffffff",
   grayColor = "#c5cbd5",
+  editable = false,
+  layerTransforms = createDefaultLayerTransforms(),
+  onLayerTransformChange,
   timelineRef,
 }: AppRevealProps) {
   const prefersReducedMotion = useReducedMotion() ?? false;
@@ -58,8 +97,22 @@ export function AppReveal({
   const normalizedPlaybackRate = clamp(playbackRate, 0.45, 2.4);
   const normalizedIconCornerRadius = clamp(iconCornerRadius, 10, 100);
   const badgePreset = getBadgePreset(badgeVariant);
-  // 100% radius can trigger visible aliasing jitter during masked animation.
-  // Keep the control value as 100 for UX, but render with a near-circle radius.
+  const {
+    stageRef,
+    selectedLayerId,
+    gesturingLayerId,
+    handleStagePointerDown,
+    handleLayerPointerDown,
+    handleLayerContextMenu,
+    handleScalePointerDown,
+    setLayerRef,
+    getLayerInteractiveStyle,
+  } = useLayerGestures({
+    editable,
+    layerTransforms,
+    onLayerTransformChange,
+  });
+
   const stableIconCornerRadius =
     normalizedIconCornerRadius >= 100 ? 99.6 : normalizedIconCornerRadius;
   const iconCornerRadiusPx = (stableIconCornerRadius / 100) * (iconSizePx / 2);
@@ -118,62 +171,169 @@ export function AppReveal({
   const iconFilter = useMotionTemplate`brightness(${brightness}) saturate(${saturation})`;
 
   return (
-    <section className={stageClassName} aria-label="App reveal animation">
-      <RevealHeader title={title} subtitle={subtitle} />
-
-      <motion.div
-        className="relative aspect-square w-44"
-        style={{ borderRadius: iconCornerRadiusValue }}
+    <section
+      className="flex w-full justify-center"
+      aria-label="App reveal animation"
+    >
+      <div
+        ref={stageRef}
+        className="relative isolate h-[40rem] w-[24rem] shrink-0"
+        onPointerDown={handleStagePointerDown}
       >
-        <motion.div
-          className={`${iconLayerClassName} z-0 bg-transparent`}
-          style={{
-            boxShadow: bloomShadow,
-            willChange: "box-shadow, opacity",
-          }}
-        />
-
-        <div
-          className={`${iconLayerClassName} bg-black shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_48px_rgba(0,0,0,0.72)]`}
-        />
-
-        <RevealSurface
-          contentOpacity={contentOpacity}
-          iconFilter={iconFilter}
-          rimColor={rimRgb}
-          grayColor={grayRgb}
-          surfaceSweepOpacity={surfaceSweepOpacity}
-          surfaceSweepImage={surfaceSweepImage}
+        {editable && gesturingLayerId !== null ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-[5]"
+            aria-hidden="true"
+          >
+            <div className="absolute inset-0 rounded-[inherit] border-2 border-dashed border-white/32" />
+          </div>
+        ) : null}
+        <EditableLayer
+          anchor={layerAnchors.title}
+          label={layerLabelMap.title}
+          editable={editable}
+          isSelected={selectedLayerId === "title"}
+          isGesturing={gesturingLayerId === "title"}
+          className={getLayerClassName({
+            editable,
+            isSelected: selectedLayerId === "title",
+            isGesturing: gesturingLayerId === "title",
+            baseClassName:
+              "pointer-events-auto relative inline-block w-max max-w-none min-w-[12rem] rounded-2xl border border-transparent px-3 py-2 text-center outline-none",
+            selectedClassName:
+              "border-white/20 bg-white/8 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+          })}
+          style={getLayerInteractiveStyle("title")}
+          setRef={(node) => setLayerRef("title", node)}
+          onPointerDown={(event) => handleLayerPointerDown("title", event)}
+          onContextMenu={handleLayerContextMenu}
+          onScalePointerDown={handleScalePointerDown}
         >
-          <RevealIcon
-            glowColor={glowRgb}
-            iconCornerRadius={iconCornerRadiusValue}
-            iconUrl={iconUrl}
-            iconAlt={iconAlt}
-            iconRevealProgress={iconRevealProgress}
-            iconDelayedReveal={iconDelayedReveal}
-            maskImage={maskImage}
+          <RevealTitle title={title} />
+        </EditableLayer>
+
+        <EditableLayer
+          anchor={layerAnchors.subtitle}
+          label={layerLabelMap.subtitle}
+          editable={editable}
+          isSelected={selectedLayerId === "subtitle"}
+          isGesturing={gesturingLayerId === "subtitle"}
+          className={getLayerClassName({
+            editable,
+            isSelected: selectedLayerId === "subtitle",
+            isGesturing: gesturingLayerId === "subtitle",
+            baseClassName:
+              "pointer-events-auto relative inline-block w-max max-w-none min-w-[12rem] rounded-2xl border border-transparent px-3 py-2 text-center outline-none",
+            selectedClassName:
+              "border-white/20 bg-white/8 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+          })}
+          style={getLayerInteractiveStyle("subtitle")}
+          setRef={(node) => setLayerRef("subtitle", node)}
+          onPointerDown={(event) => handleLayerPointerDown("subtitle", event)}
+          onContextMenu={handleLayerContextMenu}
+          onScalePointerDown={handleScalePointerDown}
+        >
+          <RevealSubtitle subtitle={subtitle} />
+        </EditableLayer>
+
+        <EditableLayer
+          anchor={layerAnchors.icon}
+          label={layerLabelMap.icon}
+          editable={editable}
+          isSelected={selectedLayerId === "icon"}
+          isGesturing={gesturingLayerId === "icon"}
+          className={getLayerClassName({
+            editable,
+            isSelected: selectedLayerId === "icon",
+            isGesturing: gesturingLayerId === "icon",
+            baseClassName:
+              "pointer-events-auto relative inline-block h-44 w-44 rounded-[3.35rem] border border-transparent bg-transparent p-0 text-left outline-none",
+            selectedClassName:
+              "border-white/22 bg-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+          })}
+          style={getLayerInteractiveStyle("icon")}
+          setRef={(node) => setLayerRef("icon", node)}
+          onPointerDown={(event) => handleLayerPointerDown("icon", event)}
+          onContextMenu={handleLayerContextMenu}
+          onScalePointerDown={handleScalePointerDown}
+        >
+          <motion.div
+            className="relative aspect-square w-44"
+            style={{ borderRadius: iconCornerRadiusValue }}
+          >
+            <motion.div
+              className={`${iconLayerClassName} z-0 bg-transparent`}
+              style={{
+                boxShadow: bloomShadow,
+                willChange: "box-shadow, opacity",
+              }}
+            />
+
+            <div
+              className={`${iconLayerClassName} bg-black shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_48px_rgba(0,0,0,0.72)]`}
+            />
+
+            <RevealSurface
+              contentOpacity={contentOpacity}
+              iconFilter={iconFilter}
+              rimColor={rimRgb}
+              grayColor={grayRgb}
+              surfaceSweepOpacity={surfaceSweepOpacity}
+              surfaceSweepImage={surfaceSweepImage}
+            >
+              <RevealIcon
+                glowColor={glowRgb}
+                iconCornerRadius={iconCornerRadiusValue}
+                iconUrl={iconUrl}
+                iconAlt={iconAlt}
+                iconRevealProgress={iconRevealProgress}
+                iconDelayedReveal={iconDelayedReveal}
+                maskImage={maskImage}
+              />
+            </RevealSurface>
+
+            <motion.div
+              className={`${iconLayerClassName} pointer-events-none z-20 rounded-[inherit] border`}
+              style={{
+                ...getRimChrome(rimRgb),
+                opacity: rimOpacity,
+              }}
+            />
+          </motion.div>
+        </EditableLayer>
+
+        <EditableLayer
+          anchor={layerAnchors.badge}
+          label={layerLabelMap.badge}
+          editable={editable}
+          isSelected={selectedLayerId === "badge"}
+          isGesturing={gesturingLayerId === "badge"}
+          className={getLayerClassName({
+            editable,
+            isSelected: selectedLayerId === "badge",
+            isGesturing: gesturingLayerId === "badge",
+            baseClassName:
+              "pointer-events-auto relative inline-block w-max max-w-none rounded-[1.35rem] border border-transparent bg-transparent p-2 text-left outline-none",
+            selectedClassName:
+              "border-white/20 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+          })}
+          style={getLayerInteractiveStyle("badge")}
+          setRef={(node) => setLayerRef("badge", node)}
+          onPointerDown={(event) => handleLayerPointerDown("badge", event)}
+          onContextMenu={handleLayerContextMenu}
+          onScalePointerDown={handleScalePointerDown}
+        >
+          <RevealBadge
+            variant={badgeVariant}
+            prefix={badgePrefix}
+            label={ctaLabel}
+            iconUrl={badgeIconUrl}
+            iconAlt={badgeIconAlt}
+            presetImageUrl={badgePreset?.src}
+            presetImageAlt={badgePreset?.alt}
           />
-        </RevealSurface>
-
-        <motion.div
-          className={`${iconLayerClassName} pointer-events-none z-20 rounded-[inherit] border`}
-          style={{
-            ...getRimChrome(rimRgb),
-            opacity: rimOpacity,
-          }}
-        />
-      </motion.div>
-
-      <RevealBadge
-        variant={badgeVariant}
-        prefix={badgePrefix}
-        label={ctaLabel}
-        iconUrl={badgeIconUrl}
-        iconAlt={badgeIconAlt}
-        presetImageUrl={badgePreset?.src}
-        presetImageAlt={badgePreset?.alt}
-      />
+        </EditableLayer>
+      </div>
     </section>
   );
 }

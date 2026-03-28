@@ -1,4 +1,67 @@
-import type { RevealControls } from "../types/revealControls";
+import type {
+  EditableLayerId,
+  LayerTransform,
+  LayerTransforms,
+  RevealControls,
+} from "../types/revealControls";
+
+const DEFAULT_LAYER_TRANSFORM: LayerTransform = {
+  x: 0,
+  y: 0,
+  scale: 1,
+};
+
+const editableLayerIds: EditableLayerId[] = [
+  "title",
+  "subtitle",
+  "icon",
+  "badge",
+];
+
+function getFiniteNumber(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+export function createDefaultLayerTransforms(): LayerTransforms {
+  return editableLayerIds.reduce<LayerTransforms>(
+    (accumulator, layerId) => {
+      accumulator[layerId] = { ...DEFAULT_LAYER_TRANSFORM };
+      return accumulator;
+    },
+    {
+      title: { ...DEFAULT_LAYER_TRANSFORM },
+      subtitle: { ...DEFAULT_LAYER_TRANSFORM },
+      icon: { ...DEFAULT_LAYER_TRANSFORM },
+      badge: { ...DEFAULT_LAYER_TRANSFORM },
+    },
+  );
+}
+
+export function sanitizeLayerTransforms(value: unknown): LayerTransforms {
+  const defaults = createDefaultLayerTransforms();
+
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+
+  for (const layerId of editableLayerIds) {
+    const candidate = (value as Partial<Record<EditableLayerId, unknown>>)[
+      layerId
+    ];
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+
+    const nextTransform = candidate as Partial<LayerTransform>;
+    defaults[layerId] = {
+      x: getFiniteNumber(nextTransform.x, 0),
+      y: getFiniteNumber(nextTransform.y, 0),
+      scale: getFiniteNumber(nextTransform.scale, 1),
+    };
+  }
+
+  return defaults;
+}
 
 export const initialControls: RevealControls = {
   title: "Now Available",
@@ -14,4 +77,5 @@ export const initialControls: RevealControls = {
   glowColor: "#ffffff",
   rimColor: "#ffffff",
   grayColor: "#c5cbd5",
+  layers: createDefaultLayerTransforms(),
 };

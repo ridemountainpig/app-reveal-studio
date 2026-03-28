@@ -8,8 +8,11 @@ import type {
   TextControlKey,
 } from "../hooks/useRevealControls";
 import type { BadgeVariant, RevealControls } from "../types/revealControls";
-import { badgeVariantOptions } from "../utils/badgeOptions";
 import { panelStyles, mediaQueries } from "../utils/styles";
+import { AnimationControlsSection } from "./reveal-controls/AnimationControlsSection";
+import { BadgeControlsSection } from "./reveal-controls/BadgeControlsSection";
+import { ColorControlsSection } from "./reveal-controls/ColorControlsSection";
+import { ContentControlsSection } from "./reveal-controls/ContentControlsSection";
 
 type RevealControlsPanelProps = {
   controls: RevealControls;
@@ -31,55 +34,6 @@ type RevealControlsPanelProps = {
   onClearUploadedIcon: () => void;
   onClearUploadedBadgeIcon: () => void;
 };
-
-type UploadFieldProps = {
-  label: string;
-  inputKey: number;
-  uploadedName: string;
-  uploadedUrl: string | null;
-  onFileChange: (file?: File) => void;
-  onClear: () => void;
-};
-
-const UploadField = memo(function UploadField({
-  label,
-  inputKey,
-  uploadedName,
-  uploadedUrl,
-  onFileChange,
-  onClear,
-}: UploadFieldProps) {
-  return (
-    <div className="rounded-2xl border border-white/8 bg-white/3 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className={panelStyles.label}>{label}</span>
-        {uploadedUrl ? (
-          <button
-            type="button"
-            onClick={onClear}
-            className="rounded-[0.65rem] border border-white/10 bg-white/4 px-2.5 py-1 text-[0.72rem] font-semibold text-white/62 transition hover:border-white/16 hover:text-white/86"
-          >
-            Clear File
-          </button>
-        ) : (
-          <span className="text-[0.72rem] font-semibold text-white/36">
-            Uploaded file takes priority
-          </span>
-        )}
-      </div>
-      <input
-        key={inputKey}
-        className={`${panelStyles.fileInput} mt-2.5`}
-        type="file"
-        accept="image/*"
-        onChange={(event) => onFileChange(event.target.files?.[0])}
-      />
-      <p className="mt-2 text-[0.76rem] font-medium text-white/38">
-        {uploadedName || "No file selected. Using the URL above."}
-      </p>
-    </div>
-  );
-});
 
 export const RevealControlsPanel = memo(function RevealControlsPanel({
   controls,
@@ -214,288 +168,45 @@ export const RevealControlsPanel = memo(function RevealControlsPanel({
           transition={{ duration: 0.24, ease: "easeOut" }}
           className="space-y-3.5 overflow-hidden"
         >
-          <label className="block">
-            <span className={panelStyles.label}>Title</span>
-            <input
-              className={`${panelStyles.input} mt-1.5`}
-              type="text"
-              value={controls.title}
-              onChange={(event) => onTextChange("title", event.target.value)}
-              placeholder="Now Available"
-            />
-          </label>
-
-          <label className="block">
-            <span className={panelStyles.label}>Subtitle</span>
-            <input
-              className={`${panelStyles.input} mt-1.5`}
-              type="text"
-              value={controls.subtitle}
-              onChange={(event) => onTextChange("subtitle", event.target.value)}
-              placeholder="Subflow - Manage Your Subscriptions"
-            />
-          </label>
-
-          <label className="block">
-            <span className={panelStyles.label}>App Icon URL</span>
-            <input
-              className={`${panelStyles.input} mt-1.5`}
-              type="url"
-              value={controls.iconUrl}
-              onChange={(event) => onTextChange("iconUrl", event.target.value)}
-              placeholder="https://example.com/icon.png"
-            />
-          </label>
-
-          <UploadField
-            label="Icon File"
-            inputKey={iconFileInputKey}
-            uploadedName={uploadedIconName}
-            uploadedUrl={uploadedIconUrl}
-            onFileChange={onIconFileChange}
-            onClear={onClearUploadedIcon}
+          <ContentControlsSection
+            title={controls.title}
+            subtitle={controls.subtitle}
+            iconUrl={controls.iconUrl}
+            iconFileInputKey={iconFileInputKey}
+            uploadedIconName={uploadedIconName}
+            uploadedIconUrl={uploadedIconUrl}
+            onTextChange={onTextChange}
+            onIconFileChange={onIconFileChange}
+            onClearUploadedIcon={onClearUploadedIcon}
           />
 
-          <div className="rounded-2xl border border-white/8 bg-white/3 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className={panelStyles.label}>Badge Type</span>
-              <span className="text-[0.72rem] font-semibold text-white/36">
-                Choose custom or store badge
-              </span>
-            </div>
-            <div
-              className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-3"
-              role="tablist"
-              aria-label="Badge type"
-            >
-              {badgeVariantOptions.map((option) => {
-                const isActive = controls.badgeVariant === option.value;
+          <BadgeControlsSection
+            badgeVariant={controls.badgeVariant}
+            badgePrefix={controls.badgePrefix}
+            badgeLabel={controls.badgeLabel}
+            badgeIconUrl={controls.badgeIconUrl}
+            badgeIconFileInputKey={badgeIconFileInputKey}
+            uploadedBadgeIconName={uploadedBadgeIconName}
+            uploadedBadgeIconUrl={uploadedBadgeIconUrl}
+            onTextChange={onTextChange}
+            onBadgeVariantChange={onBadgeVariantChange}
+            onBadgeIconFileChange={onBadgeIconFileChange}
+            onClearUploadedBadgeIcon={onClearUploadedBadgeIcon}
+          />
 
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => onBadgeVariantChange(option.value)}
-                    className={`rounded-[0.9rem] border px-3 py-2.5 text-left transition ${
-                      isActive
-                        ? "border-white/22 bg-white/12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                        : "border-white/8 bg-white/4 text-white/62 hover:border-white/16 hover:text-white/84"
-                    }`}
-                  >
-                    <span className="block text-[0.84rem] font-semibold">
-                      {option.label}
-                    </span>
-                    <span
-                      className={`mt-1 block text-[0.72rem] leading-snug ${
-                        isActive ? "text-white/68" : "text-white/42"
-                      }`}
-                    >
-                      {option.description}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <AnimationControlsSection
+            durationMs={controls.durationMs}
+            playbackRate={controls.playbackRate}
+            iconCornerRadius={controls.iconCornerRadius}
+            onRangeChange={onRangeChange}
+          />
 
-          {controls.badgeVariant === "custom" ? (
-            <>
-              <label className="block">
-                <span className={panelStyles.label}>Badge Prefix</span>
-                <input
-                  className={`${panelStyles.input} mt-1.5`}
-                  type="text"
-                  value={controls.badgePrefix}
-                  onChange={(event) =>
-                    onTextChange("badgePrefix", event.target.value)
-                  }
-                  placeholder="Manage Subscription on the"
-                />
-              </label>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className={panelStyles.label}>Badge Label</span>
-                  <input
-                    className={`${panelStyles.input} mt-1.5`}
-                    type="text"
-                    value={controls.badgeLabel}
-                    onChange={(event) =>
-                      onTextChange("badgeLabel", event.target.value)
-                    }
-                    placeholder="subflow.ing"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className={panelStyles.label}>Badge Icon URL</span>
-                  <input
-                    className={`${panelStyles.input} mt-1.5`}
-                    type="url"
-                    value={controls.badgeIconUrl}
-                    onChange={(event) =>
-                      onTextChange("badgeIconUrl", event.target.value)
-                    }
-                    placeholder="https://example.com/badge.png"
-                  />
-                </label>
-              </div>
-
-              <UploadField
-                label="Badge Icon File"
-                inputKey={badgeIconFileInputKey}
-                uploadedName={uploadedBadgeIconName}
-                uploadedUrl={uploadedBadgeIconUrl}
-                onFileChange={onBadgeIconFileChange}
-                onClear={onClearUploadedBadgeIcon}
-              />
-            </>
-          ) : null}
-
-          <div className="rounded-2xl border border-white/8 bg-white/3 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className={panelStyles.label}>Animation Duration</span>
-              <span className="text-[0.82rem] font-semibold text-white/62">
-                {(controls.durationMs / 1000).toFixed(1)}s
-              </span>
-            </div>
-            <input
-              className={`${panelStyles.range} mt-2.5`}
-              type="range"
-              min="3000"
-              max="18000"
-              step="250"
-              value={controls.durationMs}
-              onChange={(event) =>
-                onRangeChange("durationMs", Number(event.target.value))
-              }
-            />
-          </div>
-
-          <div className="rounded-2xl border border-white/8 bg-white/3 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className={panelStyles.label}>Playback Speed</span>
-              <span className="text-[0.82rem] font-semibold text-white/62">
-                {controls.playbackRate.toFixed(2)}x
-              </span>
-            </div>
-            <input
-              className={`${panelStyles.range} mt-2.5`}
-              type="range"
-              min="0.5"
-              max="1.8"
-              step="0.05"
-              value={controls.playbackRate}
-              onChange={(event) =>
-                onRangeChange("playbackRate", Number(event.target.value))
-              }
-            />
-          </div>
-
-          <div className="rounded-2xl border border-white/8 bg-white/3 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className={panelStyles.label}>Square Radius</span>
-              <span className="text-[0.82rem] font-semibold text-white/62">
-                {controls.iconCornerRadius}%
-              </span>
-            </div>
-            <input
-              className={`${panelStyles.range} mt-2.5`}
-              type="range"
-              min="10"
-              max="100"
-              step="1"
-              value={controls.iconCornerRadius}
-              onChange={(event) =>
-                onRangeChange("iconCornerRadius", Number(event.target.value))
-              }
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="block rounded-2xl border border-white/8 bg-white/3 p-3">
-              <span className={`${panelStyles.label} whitespace-nowrap`}>
-                Glow Blur Color
-              </span>
-              <div className="mt-2 flex items-center gap-3">
-                <label className="block" aria-label="Choose glow blur color">
-                  <input
-                    className="sr-only"
-                    type="color"
-                    value={controls.glowColor}
-                    onChange={(event) =>
-                      onColorChange("glowColor", event.target.value)
-                    }
-                  />
-                  <span
-                    className={panelStyles.colorButton}
-                    style={{
-                      backgroundColor: controls.glowColor,
-                    }}
-                  />
-                </label>
-                <span className="text-[0.86rem] font-semibold whitespace-nowrap text-white/62">
-                  {controls.glowColor}
-                </span>
-              </div>
-            </div>
-
-            <div className="block rounded-2xl border border-white/8 bg-white/3 p-3">
-              <span className={`${panelStyles.label} whitespace-nowrap`}>
-                Outline Color
-              </span>
-              <div className="mt-2 flex items-center gap-3">
-                <label className="block" aria-label="Choose outline color">
-                  <input
-                    className="sr-only"
-                    type="color"
-                    value={controls.rimColor}
-                    onChange={(event) =>
-                      onColorChange("rimColor", event.target.value)
-                    }
-                  />
-                  <span
-                    className={panelStyles.colorButton}
-                    style={{
-                      backgroundColor: controls.rimColor,
-                    }}
-                  />
-                </label>
-                <span className="text-[0.86rem] font-semibold whitespace-nowrap text-white/62">
-                  {controls.rimColor}
-                </span>
-              </div>
-            </div>
-
-            <div className="block rounded-2xl border border-white/8 bg-white/3 p-3">
-              <span className={`${panelStyles.label} whitespace-nowrap`}>
-                Gray Sweep Color
-              </span>
-              <div className="mt-2 flex items-center gap-3">
-                <label className="block" aria-label="Choose gray sweep color">
-                  <input
-                    className="sr-only"
-                    type="color"
-                    value={controls.grayColor}
-                    onChange={(event) =>
-                      onColorChange("grayColor", event.target.value)
-                    }
-                  />
-                  <span
-                    className={panelStyles.colorButton}
-                    style={{
-                      backgroundColor: controls.grayColor,
-                    }}
-                  />
-                </label>
-                <span className="text-[0.86rem] font-semibold whitespace-nowrap text-white/62">
-                  {controls.grayColor}
-                </span>
-              </div>
-            </div>
-          </div>
+          <ColorControlsSection
+            glowColor={controls.glowColor}
+            rimColor={controls.rimColor}
+            grayColor={controls.grayColor}
+            onColorChange={onColorChange}
+          />
         </motion.div>
       </AnimatePresence>
     </section>

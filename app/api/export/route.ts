@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
+import type { Browser, Page } from "puppeteer";
 
+import {
+  EXPORT_PAYLOAD_STORAGE_KEY,
+  MAX_EXPORT_PAYLOAD_BYTES,
+} from "@/constants/exportSettings";
 import { logger, serializeError } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -18,13 +23,12 @@ const ALLOWED_PARAMS = [
   "glowColor",
   "rimColor",
   "grayColor",
+  "layerTransforms",
 ] as const;
 
 const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_EXPORT_PAYLOAD_BYTES = 4 * 1024 * 1024; // Keep well below common sessionStorage quotas.
 const BROWSER_TIMEOUT = 480000; // 8 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
-const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
 const MAX_CONCURRENT_EXPORTS = 2;
 const BYTES_PER_MB = 1024 * 1024;
 
@@ -192,8 +196,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let browser;
-  let page;
+  let browser: Browser | undefined;
+  let page: Page | undefined;
   let hasSlot = false;
   let clientIdForSlot: string | undefined;
   let slotAcquiredAt: number | undefined;

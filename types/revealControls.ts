@@ -1,5 +1,15 @@
 export type BadgeVariant = "custom" | "appStore" | "googlePlay";
 
+export type EditableLayerId = "title" | "subtitle" | "icon" | "badge";
+
+export type LayerTransform = {
+  x: number;
+  y: number;
+  scale: number;
+};
+
+export type LayerTransforms = Record<EditableLayerId, LayerTransform>;
+
 export type RevealControls = {
   title: string;
   subtitle: string;
@@ -14,4 +24,5 @@ export type RevealControls = {
   glowColor: string;
   rimColor: string;
   grayColor: string;
+  layers: LayerTransforms;
 };
