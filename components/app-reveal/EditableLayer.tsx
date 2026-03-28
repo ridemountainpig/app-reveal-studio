@@ -13,6 +13,8 @@ import {
 
 type EditableLayerProps = {
   anchor: { x: number; y: number };
+  /** `center`: layer box centered on anchor (default). `top`: top edge at anchor, horizontally centered. */
+  anchorVerticalAlign?: "center" | "top";
   label: string;
   editable: boolean;
   isSelected: boolean;
@@ -32,6 +34,7 @@ type EditableLayerProps = {
 
 export function EditableLayer({
   anchor,
+  anchorVerticalAlign = "center",
   label,
   editable,
   isSelected,
@@ -45,9 +48,14 @@ export function EditableLayer({
   onScalePointerDown,
   children,
 }: EditableLayerProps) {
+  const shellTranslateClassName =
+    anchorVerticalAlign === "top"
+      ? "-translate-x-1/2"
+      : "-translate-x-1/2 -translate-y-1/2";
+
   return (
     <div
-      className={`pointer-events-none absolute top-0 left-1/2 ${isSelected && editable ? "z-20" : "z-10"} ${shellClassName} -translate-x-1/2 -translate-y-1/2`}
+      className={`pointer-events-none absolute top-0 left-1/2 ${isSelected && editable ? "z-20" : "z-10"} ${shellClassName} ${shellTranslateClassName}`}
       style={{ left: `${anchor.x}%`, top: `${anchor.y}%` }}
     >
       <div

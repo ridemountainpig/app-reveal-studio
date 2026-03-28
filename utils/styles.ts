@@ -3,8 +3,8 @@ export const buttonStyles = {
     "inline-flex items-center justify-center gap-2 rounded-[0.95rem] border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-[0.78rem] font-semibold tracking-[0.03em] text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_12px_30px_rgba(0,0,0,0.24)] backdrop-blur-xl transition hover:border-white/16 hover:text-white sm:px-4 sm:py-3 sm:text-[0.84rem]",
   export:
     "inline-flex items-center justify-center gap-2 rounded-[0.95rem] border border-white/10 bg-white px-3.5 py-2.5 text-[0.78rem] font-semibold tracking-[0.03em] text-black shadow-[0_16px_40px_rgba(255,255,255,0.16)] backdrop-blur-xl transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:border-white/12 disabled:bg-white/12 disabled:text-white/56 disabled:shadow-none sm:px-4 sm:py-3 sm:text-[0.84rem]",
-  github:
-    "fixed top-3 left-3 z-40 inline-flex items-center gap-2 rounded-[0.8rem] border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[0.8rem] font-semibold tracking-[0.04em] text-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl transition hover:border-white/16 hover:text-white/86 sm:px-4 sm:py-3 sm:text-[0.86rem]",
+  cornerLink:
+    "fixed top-3 left-3 z-40 inline-flex items-center justify-center rounded-[0.8rem] border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[0.85rem] font-bold tracking-[0.12em] text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl transition hover:border-white/16 hover:text-white sm:px-4 sm:py-3 sm:text-[0.9rem]",
 } as const;
 
 export const panelStyles = {

@@ -16,6 +16,8 @@ const editableLayerIds: EditableLayerId[] = [
   "subtitle",
   "icon",
   "badge",
+  "badgeAppStore",
+  "badgeGooglePlay",
 ];
 
 function getFiniteNumber(value: unknown, fallback: number) {
@@ -33,6 +35,8 @@ export function createDefaultLayerTransforms(): LayerTransforms {
       subtitle: { ...DEFAULT_LAYER_TRANSFORM },
       icon: { ...DEFAULT_LAYER_TRANSFORM },
       badge: { ...DEFAULT_LAYER_TRANSFORM },
+      badgeAppStore: { ...DEFAULT_LAYER_TRANSFORM },
+      badgeGooglePlay: { ...DEFAULT_LAYER_TRANSFORM },
     },
   );
 }

@@ -37,8 +37,8 @@ export function LayerSelectionOverlay({
         <div
           className={`absolute inset-0 rounded-[inherit] border-dashed border-[#4af] ${
             showGestureFrame
-              ? "border-[3px] border-[#6cf]"
-              : "border-2 border-[#4af]/90"
+              ? "border-2 border-[#6cf]"
+              : "border border-[#4af]/90"
           }`}
         />
       </div>

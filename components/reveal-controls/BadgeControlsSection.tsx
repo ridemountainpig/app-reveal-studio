@@ -43,7 +43,7 @@ export function BadgeControlsSection({
           </span>
         </div>
         <div
-          className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-3"
+          className="mt-2.5 grid grid-cols-2 gap-2"
           role="tablist"
           aria-label="Badge type"
         >

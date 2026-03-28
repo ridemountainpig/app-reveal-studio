@@ -29,7 +29,7 @@ import {
 import type { AppRevealProps } from "../types/reveal";
 import { useAnimationValues, useTimeline } from "../hooks/useRevealMotion";
 import { useLayerGestures } from "../hooks/useLayerGestures";
-import { getBadgePreset } from "../utils/badgeOptions";
+import { getBadgePreset, getStoreBadgePresets } from "../utils/badgeOptions";
 import { createDefaultLayerTransforms } from "../utils/revealControls";
 import {
   iconSizePx,
@@ -96,7 +96,10 @@ export function AppReveal({
   const normalizedDuration = clamp(durationMs, 1800, 30000);
   const normalizedPlaybackRate = clamp(playbackRate, 0.45, 2.4);
   const normalizedIconCornerRadius = clamp(iconCornerRadius, 10, 100);
-  const badgePreset = getBadgePreset(badgeVariant);
+  const storeBadgePresets = getStoreBadgePresets(badgeVariant);
+  const appStorePreset = getBadgePreset("appStore");
+  const googlePlayPreset = getBadgePreset("googlePlay");
+  const badgeAnchorVerticalAlign = badgeVariant !== "custom" ? "top" : "center";
   const {
     stageRef,
     selectedLayerId,
@@ -111,6 +114,7 @@ export function AppReveal({
     editable,
     layerTransforms,
     onLayerTransformChange,
+    badgeVerticalAnchor: badgeAnchorVerticalAlign,
   });
 
   const stableIconCornerRadius =
@@ -199,7 +203,7 @@ export function AppReveal({
             isSelected: selectedLayerId === "title",
             isGesturing: gesturingLayerId === "title",
             baseClassName:
-              "pointer-events-auto relative inline-block w-max max-w-none min-w-[12rem] rounded-2xl border border-transparent px-3 py-2 text-center outline-none",
+              "pointer-events-auto relative inline-block w-max max-w-none min-w-0 rounded-lg border border-transparent px-1.5 py-0.5 text-center outline-none",
             selectedClassName:
               "border-white/20 bg-white/8 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
           })}
@@ -223,7 +227,7 @@ export function AppReveal({
             isSelected: selectedLayerId === "subtitle",
             isGesturing: gesturingLayerId === "subtitle",
             baseClassName:
-              "pointer-events-auto relative inline-block w-max max-w-none min-w-[12rem] rounded-2xl border border-transparent px-3 py-2 text-center outline-none",
+              "pointer-events-auto relative inline-block w-max max-w-none min-w-0 rounded-lg border border-transparent px-1.5 py-0.5 text-center outline-none",
             selectedClassName:
               "border-white/20 bg-white/8 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
           })}
@@ -302,37 +306,110 @@ export function AppReveal({
           </motion.div>
         </EditableLayer>
 
-        <EditableLayer
-          anchor={layerAnchors.badge}
-          label={layerLabelMap.badge}
-          editable={editable}
-          isSelected={selectedLayerId === "badge"}
-          isGesturing={gesturingLayerId === "badge"}
-          className={getLayerClassName({
-            editable,
-            isSelected: selectedLayerId === "badge",
-            isGesturing: gesturingLayerId === "badge",
-            baseClassName:
-              "pointer-events-auto relative inline-block w-max max-w-none rounded-[1.35rem] border border-transparent bg-transparent p-2 text-left outline-none",
-            selectedClassName:
-              "border-white/20 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
-          })}
-          style={getLayerInteractiveStyle("badge")}
-          setRef={(node) => setLayerRef("badge", node)}
-          onPointerDown={(event) => handleLayerPointerDown("badge", event)}
-          onContextMenu={handleLayerContextMenu}
-          onScalePointerDown={handleScalePointerDown}
-        >
-          <RevealBadge
-            variant={badgeVariant}
-            prefix={badgePrefix}
-            label={ctaLabel}
-            iconUrl={badgeIconUrl}
-            iconAlt={badgeIconAlt}
-            presetImageUrl={badgePreset?.src}
-            presetImageAlt={badgePreset?.alt}
-          />
-        </EditableLayer>
+        {badgeVariant === "bothStores" ? (
+          <>
+            <EditableLayer
+              anchor={layerAnchors.badgeAppStore}
+              anchorVerticalAlign={badgeAnchorVerticalAlign}
+              label={layerLabelMap.badgeAppStore}
+              editable={editable}
+              isSelected={selectedLayerId === "badgeAppStore"}
+              isGesturing={gesturingLayerId === "badgeAppStore"}
+              className={getLayerClassName({
+                editable,
+                isSelected: selectedLayerId === "badgeAppStore",
+                isGesturing: gesturingLayerId === "badgeAppStore",
+                baseClassName:
+                  "pointer-events-auto relative inline-flex w-max max-w-none items-center rounded-lg border border-transparent bg-transparent p-1.5 text-left leading-none outline-none",
+                selectedClassName:
+                  "border-white/20 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+              })}
+              style={getLayerInteractiveStyle("badgeAppStore")}
+              setRef={(node) => setLayerRef("badgeAppStore", node)}
+              onPointerDown={(event) =>
+                handleLayerPointerDown("badgeAppStore", event)
+              }
+              onContextMenu={handleLayerContextMenu}
+              onScalePointerDown={handleScalePointerDown}
+            >
+              <RevealBadge
+                variant="appStore"
+                prefix={badgePrefix}
+                label={ctaLabel}
+                iconUrl={badgeIconUrl}
+                iconAlt={badgeIconAlt}
+                presetImages={appStorePreset ? [appStorePreset] : undefined}
+              />
+            </EditableLayer>
+            <EditableLayer
+              anchor={layerAnchors.badgeGooglePlay}
+              anchorVerticalAlign={badgeAnchorVerticalAlign}
+              label={layerLabelMap.badgeGooglePlay}
+              editable={editable}
+              isSelected={selectedLayerId === "badgeGooglePlay"}
+              isGesturing={gesturingLayerId === "badgeGooglePlay"}
+              className={getLayerClassName({
+                editable,
+                isSelected: selectedLayerId === "badgeGooglePlay",
+                isGesturing: gesturingLayerId === "badgeGooglePlay",
+                baseClassName:
+                  "pointer-events-auto relative inline-flex w-max max-w-none items-center rounded-lg border border-transparent bg-transparent p-1.5 text-left leading-none outline-none",
+                selectedClassName:
+                  "border-white/20 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+              })}
+              style={getLayerInteractiveStyle("badgeGooglePlay")}
+              setRef={(node) => setLayerRef("badgeGooglePlay", node)}
+              onPointerDown={(event) =>
+                handleLayerPointerDown("badgeGooglePlay", event)
+              }
+              onContextMenu={handleLayerContextMenu}
+              onScalePointerDown={handleScalePointerDown}
+            >
+              <RevealBadge
+                variant="googlePlay"
+                prefix={badgePrefix}
+                label={ctaLabel}
+                iconUrl={badgeIconUrl}
+                iconAlt={badgeIconAlt}
+                presetImages={googlePlayPreset ? [googlePlayPreset] : undefined}
+              />
+            </EditableLayer>
+          </>
+        ) : (
+          <EditableLayer
+            anchor={layerAnchors.badge}
+            anchorVerticalAlign={badgeAnchorVerticalAlign}
+            label={layerLabelMap.badge}
+            editable={editable}
+            isSelected={selectedLayerId === "badge"}
+            isGesturing={gesturingLayerId === "badge"}
+            className={getLayerClassName({
+              editable,
+              isSelected: selectedLayerId === "badge",
+              isGesturing: gesturingLayerId === "badge",
+              baseClassName:
+                "pointer-events-auto relative inline-flex w-max max-w-none items-center rounded-lg border border-transparent bg-transparent p-1.5 text-left leading-none outline-none",
+              selectedClassName:
+                "border-white/20 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+            })}
+            style={getLayerInteractiveStyle("badge")}
+            setRef={(node) => setLayerRef("badge", node)}
+            onPointerDown={(event) => handleLayerPointerDown("badge", event)}
+            onContextMenu={handleLayerContextMenu}
+            onScalePointerDown={handleScalePointerDown}
+          >
+            <RevealBadge
+              variant={badgeVariant}
+              prefix={badgePrefix}
+              label={ctaLabel}
+              iconUrl={badgeIconUrl}
+              iconAlt={badgeIconAlt}
+              presetImages={
+                storeBadgePresets.length > 0 ? storeBadgePresets : undefined
+              }
+            />
+          </EditableLayer>
+        )}
       </div>
     </section>
   );

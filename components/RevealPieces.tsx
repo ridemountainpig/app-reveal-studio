@@ -68,14 +68,18 @@ export function RevealHeader({ title, subtitle }: RevealHeaderProps) {
   );
 }
 
+/** Equal visual height; width from aspect ratio. Official assets vary in ratio. */
+const STORE_BADGE_IMAGE_CLASS =
+  "block h-[3rem] w-auto max-w-[9.25rem] shrink-0 object-contain";
+
 interface RevealBadgeProps {
   variant?: BadgeVariant;
   prefix: string;
   label: string;
   iconUrl?: string;
   iconAlt?: string;
-  presetImageUrl?: string;
-  presetImageAlt?: string;
+  /** Official store badge assets (one or two images). */
+  presetImages?: Array<{ src: string; alt: string }>;
 }
 
 export function RevealBadge({
@@ -84,37 +88,44 @@ export function RevealBadge({
   label,
   iconUrl,
   iconAlt,
-  presetImageUrl,
-  presetImageAlt,
+  presetImages,
 }: RevealBadgeProps) {
   const [failedIconUrl, setFailedIconUrl] = useState("");
-  const [failedPresetImageUrl, setFailedPresetImageUrl] = useState("");
+  const [failedPresetSrcs, setFailedPresetSrcs] = useState(
+    () => new Set<string>(),
+  );
   const hasImageError = Boolean(iconUrl) && failedIconUrl === iconUrl;
-  const hasPresetImageError =
-    Boolean(presetImageUrl) && failedPresetImageUrl === presetImageUrl;
-  const presetBadgeClassName =
-    variant === "appStore" ? "max-w-[9.25rem]" : "max-w-[8.5rem]";
 
-  if (variant !== "custom" && presetImageUrl && !hasPresetImageError) {
+  if (
+    variant !== "custom" &&
+    presetImages &&
+    presetImages.length > 0 &&
+    presetImages.some((item) => !failedPresetSrcs.has(item.src))
+  ) {
     return (
-      <div
-        className={`inline-flex items-center justify-center ${presetBadgeClassName}`}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          className="h-auto w-full"
-          src={presetImageUrl}
-          alt={presetImageAlt ?? ""}
-          loading="eager"
-          decoding="async"
-          onError={() => setFailedPresetImageUrl(presetImageUrl)}
-        />
+      <div className="inline-flex max-w-none items-center justify-center gap-2 leading-none">
+        {presetImages.map((item) =>
+          failedPresetSrcs.has(item.src) ? null : (
+            // eslint-disable-next-line @next/next/no-img-element -- preset raster badges
+            <img
+              key={item.src}
+              className={STORE_BADGE_IMAGE_CLASS}
+              src={item.src}
+              alt={item.alt}
+              loading="eager"
+              decoding="async"
+              onError={() => {
+                setFailedPresetSrcs((prev) => new Set([...prev, item.src]));
+              }}
+            />
+          ),
+        )}
       </div>
     );
   }
 
   return (
-    <div className="inline-flex items-center gap-[0.8rem] rounded-2xl border border-white/18 bg-[linear-gradient(180deg,rgba(12,12,14,0.92),rgba(2,2,3,0.98))] px-[1.05rem] py-[0.78rem] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_26px_rgba(0,0,0,0.35)]">
+    <div className="inline-flex items-center gap-[0.8rem] rounded-2xl border border-white/18 bg-[linear-gradient(180deg,rgba(12,12,14,0.92),rgba(2,2,3,0.98))] px-[1.05rem] py-[0.78rem] leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_26px_rgba(0,0,0,0.35)]">
       {iconUrl && !hasImageError ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img

@@ -18,6 +18,11 @@ export const badgeVariantOptions: BadgeVariantOption[] = [
     description: "Build a badge with your own prefix, label, and icon.",
   },
   {
+    value: "bothStores",
+    label: "Both stores",
+    description: "Show App Store and Google Play badges side by side.",
+  },
+  {
     value: "appStore",
     label: "App Store",
     description: "Use the built-in iOS download badge.",
@@ -33,7 +38,7 @@ export const badgeVariantValues = badgeVariantOptions.map(
   (option) => option.value,
 );
 
-const badgePresets: Record<Exclude<BadgeVariant, "custom">, BadgePreset> = {
+const badgePresets: Record<"appStore" | "googlePlay", BadgePreset> = {
   appStore: {
     src: "/app-store-download.png",
     alt: "Download on the App Store",
@@ -44,12 +49,25 @@ const badgePresets: Record<Exclude<BadgeVariant, "custom">, BadgePreset> = {
   },
 };
 
-export function getBadgePreset(variant: BadgeVariant) {
-  if (variant === "custom") {
+export function getBadgePreset(variant: BadgeVariant): BadgePreset | null {
+  if (variant === "custom" || variant === "bothStores") {
     return null;
   }
 
   return badgePresets[variant];
+}
+
+/** Store-asset badge row: one or both official download badges. */
+export function getStoreBadgePresets(variant: BadgeVariant): BadgePreset[] {
+  if (variant === "custom") {
+    return [];
+  }
+
+  if (variant === "bothStores") {
+    return [badgePresets.appStore, badgePresets.googlePlay];
+  }
+
+  return [badgePresets[variant]];
 }
 
 export function isBadgeVariant(value: string): value is BadgeVariant {

@@ -25,6 +25,7 @@ import {
   stageWidthPx,
   toOffsetPx,
   toPercent,
+  type LayerClampOptions,
 } from "../components/app-reveal/layerGeometry";
 
 type UseLayerGesturesOptions = {
@@ -34,6 +35,8 @@ type UseLayerGesturesOptions = {
     layerId: EditableLayerId,
     nextTransform: LayerTransform,
   ) => void;
+  /** Store badge (App / Play) uses top-of-anchor layout; custom badge uses center anchor. */
+  badgeVerticalAnchor?: "center" | "top";
 };
 
 const baseTransformOriginStyle = { transformOrigin: "center center" as const };
@@ -43,7 +46,10 @@ export function useLayerGestures({
   editable,
   layerTransforms,
   onLayerTransformChange,
+  badgeVerticalAnchor = "center",
 }: UseLayerGesturesOptions) {
+  const badgeClampOptions: LayerClampOptions | undefined =
+    badgeVerticalAnchor === "top" ? { badgeVerticalAnchor: "top" } : undefined;
   const [selectedLayerId, setSelectedLayerId] =
     useState<EditableLayerId | null>(null);
   const [gesturingLayerId, setGesturingLayerId] =
@@ -59,6 +65,8 @@ export function useLayerGestures({
     subtitle: null,
     icon: null,
     badge: null,
+    badgeAppStore: null,
+    badgeGooglePlay: null,
   });
   const layerTransformsRef = useRef(layerTransforms);
   const activeGestureCleanupRef = useRef<(() => void) | null>(null);
@@ -139,6 +147,7 @@ export function useLayerGestures({
       stageSize.width,
       stageSize.height,
       target,
+      badgeClampOptions,
     );
 
     onLayerTransformChange?.(layerId, clampedTransform);
@@ -229,6 +238,7 @@ export function useLayerGestures({
         height,
         layoutWidth,
         layoutHeight,
+        badgeClampOptions,
       );
 
       const nextTransform = getBaseLayerTransform(width, height, lastClamped);
@@ -344,6 +354,7 @@ export function useLayerGestures({
         height,
         layoutWidth,
         layoutHeight,
+        badgeClampOptions,
       );
 
       const nextTransform = getBaseLayerTransform(width, height, lastClamped);

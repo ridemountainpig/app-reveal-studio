@@ -1,6 +1,12 @@
-export type BadgeVariant = "custom" | "appStore" | "googlePlay";
+export type BadgeVariant = "custom" | "appStore" | "googlePlay" | "bothStores";
 
-export type EditableLayerId = "title" | "subtitle" | "icon" | "badge";
+export type EditableLayerId =
+  | "title"
+  | "subtitle"
+  | "icon"
+  | "badge"
+  | "badgeAppStore"
+  | "badgeGooglePlay";
 
 export type LayerTransform = {
   x: number;

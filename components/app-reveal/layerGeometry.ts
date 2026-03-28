@@ -16,6 +16,11 @@ export const layerAnchors: Record<EditableLayerId, { x: number; y: number }> = {
   subtitle: { x: 50, y: 23 },
   icon: { x: 50, y: 53 },
   badge: { x: 50, y: 87.5 },
+  /**
+   * Both stores: horizontal centers; inset vs 27/73 so the pair sits slightly closer.
+   */
+  badgeAppStore: { x: 29, y: 87.5 },
+  badgeGooglePlay: { x: 71, y: 87.5 },
 };
 
 export const layerLabelMap: Record<EditableLayerId, string> = {
@@ -23,6 +28,8 @@ export const layerLabelMap: Record<EditableLayerId, string> = {
   subtitle: "Subtitle",
   icon: "Icon",
   badge: "Badge",
+  badgeAppStore: "App Store badge",
+  badgeGooglePlay: "Google Play badge",
 };
 
 /** Keeps scaled layer bounds within the stage (video frame); caps max scale by fit. */
@@ -71,6 +78,11 @@ export function getBaseLayerTransform(
   return `translate3d(${offsetX}px, ${offsetY}px, 0) scale(${transform.scale})`;
 }
 
+export type LayerClampOptions = {
+  /** Badge store presets align to top of anchor; custom badge stays center-anchored. */
+  badgeVerticalAnchor?: "center" | "top";
+};
+
 /** Hot path: avoids reading el.offsetWidth/offsetHeight every frame (layout thrash). */
 export function clampLayerTransformWithLayout(
   layerId: EditableLayerId,
@@ -79,6 +91,7 @@ export function clampLayerTransformWithLayout(
   stageHeight: number,
   layoutWidth: number,
   layoutHeight: number,
+  clampOptions?: LayerClampOptions,
 ): LayerTransform {
   if (stageWidth <= 0 || stageHeight <= 0) {
     return nextTransform;
@@ -99,12 +112,34 @@ export function clampLayerTransformWithLayout(
   const offsetX = toOffsetPx(nextTransform.x, stageWidth);
   const offsetY = toOffsetPx(nextTransform.y, stageHeight);
   const nextCenterX = anchorX + offsetX;
-  const nextCenterY = anchorY + offsetY;
 
   const minCenterX =
     targetWidth >= stageWidth ? stageWidth / 2 : targetWidth / 2;
   const maxCenterX =
     targetWidth >= stageWidth ? stageWidth / 2 : stageWidth - targetWidth / 2;
+
+  const centerX = clamp(nextCenterX, minCenterX, maxCenterX);
+
+  const useTopBadgeAnchor =
+    (layerId === "badge" ||
+      layerId === "badgeAppStore" ||
+      layerId === "badgeGooglePlay") &&
+    clampOptions?.badgeVerticalAnchor === "top";
+
+  if (useTopBadgeAnchor) {
+    const nextTopY = anchorY + offsetY;
+    const maxTopY = Math.max(0, stageHeight - targetHeight);
+    const topY = clamp(nextTopY, 0, maxTopY);
+
+    return {
+      x: toPercent(centerX - anchorX, stageWidth),
+      y: toPercent(topY - anchorY, stageHeight),
+      scale,
+    };
+  }
+
+  const nextCenterY = anchorY + offsetY;
+
   const minCenterY =
     targetHeight >= stageHeight ? stageHeight / 2 : targetHeight / 2;
   const maxCenterY =
@@ -112,7 +147,6 @@ export function clampLayerTransformWithLayout(
       ? stageHeight / 2
       : stageHeight - targetHeight / 2;
 
-  const centerX = clamp(nextCenterX, minCenterX, maxCenterX);
   const centerY = clamp(nextCenterY, minCenterY, maxCenterY);
 
   return {
@@ -128,6 +162,7 @@ export function clampLayerTransform(
   stageWidth: number,
   stageHeight: number,
   target: HTMLElement | null,
+  clampOptions?: LayerClampOptions,
 ) {
   if (!target || stageWidth <= 0 || stageHeight <= 0) {
     return nextTransform;
@@ -140,6 +175,7 @@ export function clampLayerTransform(
     stageHeight,
     target.offsetWidth,
     target.offsetHeight,
+    clampOptions,
   );
 }
 
