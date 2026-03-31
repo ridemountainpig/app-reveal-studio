@@ -83,7 +83,7 @@ export default function Home() {
         className={buttonStyles.cornerLink}
         aria-label="YC — yencheng.dev"
       >
-        YC
+        Build by YC
       </motion.a>
 
       <RevealControlsPanel
