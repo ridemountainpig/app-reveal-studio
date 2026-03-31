@@ -102,9 +102,17 @@ export async function generateVideo(
   await output.start();
 
   let encError: Error | null = null;
+  let packetWriteError: Error | null = null;
+  let packetWriteQueue = Promise.resolve();
   const encoder = new VideoEncoder({
-    output: async (chunk, meta) => {
-      await videoSource.add(EncodedPacket.fromEncodedChunk(chunk), meta);
+    output: (chunk, meta) => {
+      const packet = EncodedPacket.fromEncodedChunk(chunk);
+      packetWriteQueue = packetWriteQueue
+        .then(() => videoSource.add(packet, meta))
+        .catch((e) => {
+          packetWriteError =
+            packetWriteError ?? (e instanceof Error ? e : new Error(String(e)));
+        });
     },
     error: (e) => {
       encError = e instanceof Error ? e : new Error(String(e));
@@ -174,7 +182,9 @@ export async function generateVideo(
 
   if (encError) throw encError;
   await encoder.flush();
+  await packetWriteQueue;
   encoder.close();
+  if (packetWriteError) throw packetWriteError;
   await output.finalize();
 
   if (!target.buffer) {
