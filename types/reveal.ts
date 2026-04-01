@@ -31,6 +31,7 @@ export type AppRevealProps = {
   badgeIconUrl?: string;
   badgeIconAlt?: string;
   glowColor?: string;
+  glowSize?: number;
   rimColor?: string;
   grayColor?: string;
   editable?: boolean;

@@ -3,10 +3,11 @@
 import {
   motion,
   useMotionTemplate,
+  useMotionValue,
   useReducedMotion,
   useTransform,
 } from "framer-motion";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   DEFAULT_GRAY_RGB,
   TOTAL_DURATION_MS,
@@ -85,6 +86,7 @@ export function AppReveal({
   badgeIconUrl,
   badgeIconAlt = "Badge icon",
   glowColor = "#ffffff",
+  glowSize = 100,
   rimColor = "#ffffff",
   grayColor = "#c5cbd5",
   editable = false,
@@ -96,6 +98,8 @@ export function AppReveal({
   const normalizedDuration = clamp(durationMs, 1800, 30000);
   const normalizedPlaybackRate = clamp(playbackRate, 0.45, 2.4);
   const normalizedIconCornerRadius = clamp(iconCornerRadius, 10, 100);
+  const normalizedGlowSize = clamp(glowSize, 40, 300);
+  const glowSizeMultiplier = normalizedGlowSize / 100;
   const storeBadgePresets = getStoreBadgePresets(badgeVariant);
   const appStorePreset = getBadgePreset("appStore");
   const googlePlayPreset = getBadgePreset("googlePlay");
@@ -104,6 +108,7 @@ export function AppReveal({
     stageRef,
     selectedLayerId,
     gesturingLayerId,
+    alignmentGuides,
     handleStagePointerDown,
     handleLayerPointerDown,
     handleLayerContextMenu,
@@ -161,8 +166,12 @@ export function AppReveal({
   );
   const brightness = useTransform(delayedReveal, getBrightness);
   const saturation = useTransform(delayedReveal, [0, 0.7, 1], [0.45, 1.12, 1]);
-  const bloomShadow = useTransform(bloomProgress, (value: number) =>
-    getBloomShadow(value, glowRgb),
+  const glowSizeMotion = useMotionValue(glowSizeMultiplier);
+  useEffect(() => {
+    glowSizeMotion.set(glowSizeMultiplier);
+  }, [glowSizeMotion, glowSizeMultiplier]);
+  const bloomShadow = useTransform([bloomProgress, glowSizeMotion], ([p, s]) =>
+    getBloomShadow(p as number, glowRgb, s as number),
   );
 
   const contentOpacity = useTransform(
@@ -190,6 +199,12 @@ export function AppReveal({
             aria-hidden="true"
           >
             <div className="absolute inset-0 rounded-[inherit] border-2 border-dashed border-white/32" />
+            {alignmentGuides.vertical ? (
+              <div className="absolute top-0 bottom-0 left-1/2 z-[1] w-0 -translate-x-1/2 border-l-2 border-dashed border-[#facc15]" />
+            ) : null}
+            {alignmentGuides.horizontal ? (
+              <div className="absolute top-1/2 right-0 left-0 z-[1] h-0 -translate-y-1/2 border-t-2 border-dashed border-[#facc15]" />
+            ) : null}
           </div>
         ) : null}
         <EditableLayer
@@ -287,6 +302,7 @@ export function AppReveal({
             >
               <RevealIcon
                 glowColor={glowRgb}
+                glowSize={glowSizeMultiplier}
                 iconCornerRadius={iconCornerRadiusValue}
                 iconUrl={iconUrl}
                 iconAlt={iconAlt}

@@ -14,6 +14,7 @@ export type RenderControls = {
   durationMs: number;
   playbackRate: number;
   glowColor: string;
+  glowSize: number;
   rimColor: string;
   grayColor: string;
   layerTransforms: LayerTransforms;
@@ -55,6 +56,10 @@ export function readRenderControls(
       readValue("playbackRate") || initialControls.playbackRate,
     ),
     glowColor: readValue("glowColor") || initialControls.glowColor,
+    glowSize: (() => {
+      const parsed = Number(readValue("glowSize") ?? initialControls.glowSize);
+      return Number.isFinite(parsed) ? parsed : initialControls.glowSize;
+    })(),
     rimColor: readValue("rimColor") || initialControls.rimColor,
     grayColor: readValue("grayColor") || initialControls.grayColor,
     layerTransforms: parseLayerTransforms(readValue("layerTransforms")),

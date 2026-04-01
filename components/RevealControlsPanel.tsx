@@ -203,9 +203,11 @@ export const RevealControlsPanel = memo(function RevealControlsPanel({
 
           <ColorControlsSection
             glowColor={controls.glowColor}
+            glowSize={controls.glowSize}
             rimColor={controls.rimColor}
             grayColor={controls.grayColor}
             onColorChange={onColorChange}
+            onRangeChange={onRangeChange}
           />
         </motion.div>
       </AnimatePresence>

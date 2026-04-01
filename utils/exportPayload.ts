@@ -12,6 +12,7 @@ type ExportPayloadControls = Pick<
   | "durationMs"
   | "playbackRate"
   | "glowColor"
+  | "glowSize"
   | "rimColor"
   | "grayColor"
 > & {
@@ -63,6 +64,7 @@ export function getExportPayload({
     durationMs: String(previewControls.durationMs),
     playbackRate: String(previewControls.playbackRate),
     glowColor: previewControls.glowColor,
+    glowSize: String(previewControls.glowSize),
     rimColor: previewControls.rimColor,
     grayColor: previewControls.grayColor,
     layerTransforms: JSON.stringify(previewControls.layers),

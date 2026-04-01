@@ -79,6 +79,7 @@ export const initialControls: RevealControls = {
   durationMs: 7000,
   playbackRate: 1,
   glowColor: "#ffffff",
+  glowSize: 100,
   rimColor: "#ffffff",
   grayColor: "#c5cbd5",
   layers: createDefaultLayerTransforms(),

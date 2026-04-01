@@ -105,6 +105,7 @@ function RenderPageInner() {
     durationMs,
     playbackRate,
     glowColor,
+    glowSize,
     rimColor,
     grayColor,
     layerTransforms,
@@ -160,6 +161,7 @@ function RenderPageInner() {
             badgeIconUrl={badgeIconUrl}
             badgeIconAlt={ctaLabel}
             glowColor={glowColor}
+            glowSize={glowSize}
             rimColor={rimColor}
             grayColor={grayColor}
             layerTransforms={layerTransforms}

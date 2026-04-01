@@ -156,6 +156,48 @@ export function clampLayerTransformWithLayout(
   };
 }
 
+/** Visual center of the layer in stage pixel space (matches clamp math). */
+export function getLayerVisualCenterPx(
+  layerId: EditableLayerId,
+  transform: LayerTransform,
+  stageWidth: number,
+  stageHeight: number,
+  layoutWidth: number,
+  layoutHeight: number,
+  clampOptions?: LayerClampOptions,
+): { cx: number; cy: number } {
+  const scale = clampScaleToStageBounds(
+    layoutWidth,
+    layoutHeight,
+    stageWidth,
+    stageHeight,
+    transform.scale,
+  );
+  const targetHeight = layoutHeight * scale;
+  const anchor = layerAnchors[layerId];
+  const anchorX = (anchor.x / 100) * stageWidth;
+  const anchorY = (anchor.y / 100) * stageHeight;
+  const offsetX = toOffsetPx(transform.x, stageWidth);
+  const offsetY = toOffsetPx(transform.y, stageHeight);
+
+  const cx = anchorX + offsetX;
+
+  const useTopBadgeAnchor =
+    (layerId === "badge" ||
+      layerId === "badgeAppStore" ||
+      layerId === "badgeGooglePlay") &&
+    clampOptions?.badgeVerticalAnchor === "top";
+
+  if (useTopBadgeAnchor) {
+    const topY = anchorY + offsetY;
+    const cy = topY + targetHeight / 2;
+    return { cx, cy };
+  }
+
+  const cy = anchorY + offsetY;
+  return { cx, cy };
+}
+
 export function clampLayerTransform(
   layerId: EditableLayerId,
   nextTransform: LayerTransform,

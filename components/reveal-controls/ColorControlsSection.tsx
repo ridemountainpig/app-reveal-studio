@@ -1,7 +1,11 @@
 "use client";
 
-import type { ColorControlKey } from "../../hooks/useRevealControls";
+import type {
+  ColorControlKey,
+  RangeControlKey,
+} from "../../hooks/useRevealControls";
 import { panelStyles } from "../../utils/styles";
+import { SliderControl } from "./AnimationControlsSection";
 
 type ColorPickerCardProps = {
   label: string;
@@ -44,19 +48,35 @@ function ColorPickerCard({
 
 type ColorControlsSectionProps = {
   glowColor: string;
+  glowSize: number;
   rimColor: string;
   grayColor: string;
   onColorChange: (key: ColorControlKey, value: string) => void;
+  onRangeChange: (key: RangeControlKey, value: number) => void;
 };
 
 export function ColorControlsSection({
   glowColor,
+  glowSize,
   rimColor,
   grayColor,
   onColorChange,
+  onRangeChange,
 }: ColorControlsSectionProps) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="sm:col-span-2">
+        <SliderControl
+          label="Glow Size"
+          valueLabel={`${glowSize}%`}
+          value={glowSize}
+          min="40"
+          max="300"
+          step="5"
+          controlKey="glowSize"
+          onRangeChange={onRangeChange}
+        />
+      </div>
       <ColorPickerCard
         label="Glow Blur Color"
         value={glowColor}

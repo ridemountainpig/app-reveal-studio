@@ -14,7 +14,7 @@ type SliderControlProps = {
   onRangeChange: (key: RangeControlKey, value: number) => void;
 };
 
-function SliderControl({
+export function SliderControl({
   label,
   valueLabel,
   value,

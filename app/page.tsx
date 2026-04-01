@@ -120,6 +120,7 @@ export default function Home() {
         iconUrl={safeIconUrl}
         badgeIconUrl={safeBadgeIconUrl}
         glowColor={previewControls.glowColor}
+        glowSize={previewControls.glowSize}
         rimColor={previewControls.rimColor}
         grayColor={previewControls.grayColor}
         layerTransforms={safeLayerTransforms}

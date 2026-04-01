@@ -28,6 +28,7 @@ export type RevealControls = {
   durationMs: number;
   playbackRate: number;
   glowColor: string;
+  glowSize: number;
   rimColor: string;
   grayColor: string;
   layers: LayerTransforms;

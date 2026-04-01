@@ -23,6 +23,7 @@ type RevealPreviewProps = {
   iconUrl?: string;
   badgeIconUrl?: string;
   glowColor: string;
+  glowSize: number;
   rimColor: string;
   grayColor: string;
   layerTransforms: LayerTransforms;
@@ -52,6 +53,7 @@ export function RevealPreview({
   iconUrl,
   badgeIconUrl,
   glowColor,
+  glowSize,
   rimColor,
   grayColor,
   layerTransforms,
@@ -84,6 +86,7 @@ export function RevealPreview({
           badgeIconUrl={badgeIconUrl}
           badgeIconAlt={ctaLabel}
           glowColor={glowColor}
+          glowSize={glowSize}
           rimColor={rimColor}
           grayColor={grayColor}
           editable={!isExporting}

@@ -21,6 +21,7 @@ const ALLOWED_PARAMS = [
   "durationMs",
   "playbackRate",
   "glowColor",
+  "glowSize",
   "rimColor",
   "grayColor",
   "layerTransforms",

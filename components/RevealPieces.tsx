@@ -216,6 +216,7 @@ export function RevealSurface({
 
 interface RevealIconProps {
   glowColor: RgbColor;
+  glowSize: number;
   iconCornerRadius: string;
   iconUrl?: string;
   iconAlt?: string;
@@ -226,6 +227,7 @@ interface RevealIconProps {
 
 export function RevealIcon({
   glowColor,
+  glowSize,
   iconCornerRadius,
   iconUrl,
   iconAlt,
@@ -290,8 +292,12 @@ export function RevealIcon({
         coreShadowColor: `rgba(${glowRgb}, 0.4)`,
       };
     }, [glowColor]);
-  const glyphGlowFilter = useMotionTemplate`blur(${glyphGlowBlur}px) brightness(${glyphGlowBrightness}) saturate(1.18) drop-shadow(0 0 168px ${glowShadowColor})`;
-  const glyphCoreFilter = useMotionTemplate`brightness(${glyphCoreBrightness}) saturate(1.04) drop-shadow(0 0 24px ${coreShadowColor}) drop-shadow(0 10px 14px rgba(0, 0, 0, 0.2))`;
+  const glowOuterPx = 168 * glowSize;
+  const glowCorePx = 24 * glowSize;
+  const auraBlurPx = 120 * glowSize;
+  const auraInsetPct = 30 * glowSize;
+  const glyphGlowFilter = useMotionTemplate`blur(${glyphGlowBlur}px) brightness(${glyphGlowBrightness}) saturate(1.18) drop-shadow(0 0 ${glowOuterPx}px ${glowShadowColor})`;
+  const glyphCoreFilter = useMotionTemplate`brightness(${glyphCoreBrightness}) saturate(1.04) drop-shadow(0 0 ${glowCorePx}px ${coreShadowColor}) drop-shadow(0 10px 14px rgba(0, 0, 0, 0.2))`;
 
   return (
     <motion.div
@@ -305,11 +311,13 @@ export function RevealIcon({
       }}
     >
       <motion.div
-        className="absolute inset-[-30%] rounded-[32%] blur-[120px]"
+        className="absolute rounded-[32%]"
         style={{
+          inset: `-${auraInsetPct}%`,
           opacity: glyphAuraOpacity,
           scale: glyphAuraScale,
           backgroundImage: glowAuraBackground,
+          filter: `blur(${auraBlurPx}px)`,
         }}
       />
 

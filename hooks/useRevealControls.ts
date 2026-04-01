@@ -19,7 +19,8 @@ export type TextControlKey =
 export type RangeControlKey =
   | "durationMs"
   | "playbackRate"
-  | "iconCornerRadius";
+  | "iconCornerRadius"
+  | "glowSize";
 export type ColorControlKey = "glowColor" | "rimColor" | "grayColor";
 
 type RevealControlsAction =

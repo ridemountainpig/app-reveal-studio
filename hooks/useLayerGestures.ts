@@ -20,6 +20,7 @@ import {
   clampLayerTransform,
   clampLayerTransformWithLayout,
   getBaseLayerTransform,
+  getLayerVisualCenterPx,
   getPointerClient,
   stageHeightPx,
   stageWidthPx,
@@ -54,6 +55,11 @@ export function useLayerGestures({
     useState<EditableLayerId | null>(null);
   const [gesturingLayerId, setGesturingLayerId] =
     useState<EditableLayerId | null>(null);
+  const [alignmentGuides, setAlignmentGuides] = useState({
+    vertical: false,
+    horizontal: false,
+  });
+  const alignmentGuidesRef = useRef({ vertical: false, horizontal: false });
   const [stageSize, setStageSize] = useState({
     width: stageWidthPx,
     height: stageHeightPx,
@@ -109,6 +115,8 @@ export function useLayerGestures({
       const frameId = window.requestAnimationFrame(() => {
         setSelectedLayerId(null);
         setGesturingLayerId(null);
+        alignmentGuidesRef.current = { vertical: false, horizontal: false };
+        setAlignmentGuides({ vertical: false, horizontal: false });
       });
 
       return () => window.cancelAnimationFrame(frameId);
@@ -191,6 +199,9 @@ export function useLayerGestures({
       setGesturingLayerId(layerId);
     });
 
+    alignmentGuidesRef.current = { vertical: false, horizontal: false };
+    setAlignmentGuides({ vertical: false, horizontal: false });
+
     const layoutWidth = el.offsetWidth;
     const layoutHeight = el.offsetHeight;
     el.style.willChange = "transform";
@@ -211,6 +222,8 @@ export function useLayerGestures({
       }
       el.style.removeProperty("will-change");
       liveLayerTransformRef.current = null;
+      alignmentGuidesRef.current = { vertical: false, horizontal: false };
+      setAlignmentGuides({ vertical: false, horizontal: false });
     };
 
     const onMove = (ev: PointerEvent) => {
@@ -244,6 +257,33 @@ export function useLayerGestures({
       const nextTransform = getBaseLayerTransform(width, height, lastClamped);
       el.style.transform = nextTransform;
       liveLayerTransformRef.current = nextTransform;
+
+      const { cx, cy } = getLayerVisualCenterPx(
+        layerId,
+        lastClamped,
+        width,
+        height,
+        layoutWidth,
+        layoutHeight,
+        badgeClampOptions,
+      );
+      const thresholdX = Math.max(3, width * 0.008);
+      const thresholdY = Math.max(3, height * 0.008);
+      const nextVertical = Math.abs(cx - width / 2) <= thresholdX;
+      const nextHorizontal = Math.abs(cy - height / 2) <= thresholdY;
+      if (
+        alignmentGuidesRef.current.vertical !== nextVertical ||
+        alignmentGuidesRef.current.horizontal !== nextHorizontal
+      ) {
+        alignmentGuidesRef.current = {
+          vertical: nextVertical,
+          horizontal: nextHorizontal,
+        };
+        setAlignmentGuides({
+          vertical: nextVertical,
+          horizontal: nextHorizontal,
+        });
+      }
     };
 
     const onEnd = (ev: PointerEvent) => {
@@ -426,6 +466,7 @@ export function useLayerGestures({
     stageRef,
     selectedLayerId,
     gesturingLayerId,
+    alignmentGuides,
     handleStagePointerDown,
     handleLayerPointerDown,
     handleLayerContextMenu,
