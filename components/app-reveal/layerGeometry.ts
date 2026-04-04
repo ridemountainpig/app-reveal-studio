@@ -120,6 +120,13 @@ export function clampLayerTransformWithLayout(
 
   const centerX = clamp(nextCenterX, minCenterX, maxCenterX);
 
+  const minCenterY =
+    targetHeight >= stageHeight ? stageHeight / 2 : targetHeight / 2;
+  const maxCenterY =
+    targetHeight >= stageHeight
+      ? stageHeight / 2
+      : stageHeight - targetHeight / 2;
+
   const useTopBadgeAnchor =
     (layerId === "badge" ||
       layerId === "badgeAppStore" ||
@@ -127,25 +134,17 @@ export function clampLayerTransformWithLayout(
     clampOptions?.badgeVerticalAnchor === "top";
 
   if (useTopBadgeAnchor) {
-    const nextTopY = anchorY + offsetY;
-    const maxTopY = Math.max(0, stageHeight - targetHeight);
-    const topY = clamp(nextTopY, 0, maxTopY);
+    const nextCenterY = anchorY + offsetY + layoutHeight / 2;
+    const centerY = clamp(nextCenterY, minCenterY, maxCenterY);
 
     return {
       x: toPercent(centerX - anchorX, stageWidth),
-      y: toPercent(topY - anchorY, stageHeight),
+      y: toPercent(centerY - anchorY - layoutHeight / 2, stageHeight),
       scale,
     };
   }
 
   const nextCenterY = anchorY + offsetY;
-
-  const minCenterY =
-    targetHeight >= stageHeight ? stageHeight / 2 : targetHeight / 2;
-  const maxCenterY =
-    targetHeight >= stageHeight
-      ? stageHeight / 2
-      : stageHeight - targetHeight / 2;
 
   const centerY = clamp(nextCenterY, minCenterY, maxCenterY);
 
@@ -166,14 +165,6 @@ export function getLayerVisualCenterPx(
   layoutHeight: number,
   clampOptions?: LayerClampOptions,
 ): { cx: number; cy: number } {
-  const scale = clampScaleToStageBounds(
-    layoutWidth,
-    layoutHeight,
-    stageWidth,
-    stageHeight,
-    transform.scale,
-  );
-  const targetHeight = layoutHeight * scale;
   const anchor = layerAnchors[layerId];
   const anchorX = (anchor.x / 100) * stageWidth;
   const anchorY = (anchor.y / 100) * stageHeight;
@@ -189,8 +180,7 @@ export function getLayerVisualCenterPx(
     clampOptions?.badgeVerticalAnchor === "top";
 
   if (useTopBadgeAnchor) {
-    const topY = anchorY + offsetY;
-    const cy = topY + targetHeight / 2;
+    const cy = anchorY + offsetY + layoutHeight / 2;
     return { cx, cy };
   }
 

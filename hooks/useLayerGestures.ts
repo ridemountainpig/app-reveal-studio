@@ -297,6 +297,7 @@ export function useLayerGestures({
       }
       if (lastClamped) {
         handleLayerTransformChange(layerId, lastClamped);
+        setSelectedLayerId(null);
       }
       setGesturingLayerId(null);
     };
@@ -415,6 +416,7 @@ export function useLayerGestures({
         handleLayerTransformChange(layerId, lastClamped);
       }
       setGesturingLayerId(null);
+      setSelectedLayerId(null);
     };
 
     activeGestureCleanupRef.current = cleanupGesture;

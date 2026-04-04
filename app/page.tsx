@@ -70,7 +70,7 @@ export default function Home() {
       payload: exportPayload,
     });
 
-  const previewPadding = isPanelCollapsed ? "xl:pr-[7.5rem]" : "xl:pr-[27rem]";
+  const previewPadding = isPanelCollapsed ? "" : "xl:pr-[27rem]";
 
   return (
     <main className="relative grid min-h-screen place-items-center overflow-x-auto overflow-y-auto bg-black">

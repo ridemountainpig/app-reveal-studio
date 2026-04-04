@@ -195,20 +195,20 @@ export function AppReveal({
     >
       <div
         ref={stageRef}
-        className="relative isolate h-[40rem] w-[24rem] shrink-0"
+        className="relative isolate h-160 w-[24rem] shrink-0"
         onPointerDown={handleStagePointerDown}
       >
         {editable && gesturingLayerId !== null ? (
           <div
-            className="pointer-events-none absolute inset-0 z-[5]"
+            className="pointer-events-none absolute inset-0 z-5"
             aria-hidden="true"
           >
             <div className="absolute inset-0 rounded-[inherit] border-2 border-dashed border-white/32" />
             {alignmentGuides.vertical ? (
-              <div className="absolute top-0 bottom-0 left-1/2 z-[1] w-0 -translate-x-1/2 border-l-2 border-dashed border-[#facc15]" />
+              <div className="absolute top-0 bottom-0 left-1/2 z-1 w-0 -translate-x-1/2 border-l-2 border-dashed border-[#facc15]" />
             ) : null}
             {alignmentGuides.horizontal ? (
-              <div className="absolute top-1/2 right-0 left-0 z-[1] h-0 -translate-y-1/2 border-t-2 border-dashed border-[#facc15]" />
+              <div className="absolute top-1/2 right-0 left-0 z-1 h-0 -translate-y-1/2 border-t-2 border-dashed border-[#facc15]" />
             ) : null}
           </div>
         ) : null}
@@ -273,7 +273,7 @@ export function AppReveal({
             baseClassName:
               "pointer-events-auto relative inline-block h-44 w-44 rounded-[3.35rem] border border-transparent bg-transparent p-0 text-left outline-none",
             selectedClassName:
-              "border-white/22 bg-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+              "border-white/22 bg-white/3 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
           })}
           style={getLayerInteractiveStyle("icon")}
           setRef={(node) => setLayerRef("icon", node)}
@@ -343,7 +343,7 @@ export function AppReveal({
                 baseClassName:
                   "pointer-events-auto relative inline-flex w-max max-w-none items-center rounded-lg border border-transparent bg-transparent p-1.5 text-left leading-none outline-none",
                 selectedClassName:
-                  "border-white/20 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+                  "border-white/20 bg-white/4 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
               })}
               style={getLayerInteractiveStyle("badgeAppStore")}
               setRef={(node) => setLayerRef("badgeAppStore", node)}
@@ -376,7 +376,7 @@ export function AppReveal({
                 baseClassName:
                   "pointer-events-auto relative inline-flex w-max max-w-none items-center rounded-lg border border-transparent bg-transparent p-1.5 text-left leading-none outline-none",
                 selectedClassName:
-                  "border-white/20 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+                  "border-white/20 bg-white/4 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
               })}
               style={getLayerInteractiveStyle("badgeGooglePlay")}
               setRef={(node) => setLayerRef("badgeGooglePlay", node)}
@@ -411,7 +411,7 @@ export function AppReveal({
               baseClassName:
                 "pointer-events-auto relative inline-flex w-max max-w-none items-center rounded-lg border border-transparent bg-transparent p-1.5 text-left leading-none outline-none",
               selectedClassName:
-                "border-white/20 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
+                "border-white/20 bg-white/4 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]",
             })}
             style={getLayerInteractiveStyle("badge")}
             setRef={(node) => setLayerRef("badge", node)}
