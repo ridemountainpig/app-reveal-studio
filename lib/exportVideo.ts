@@ -83,21 +83,37 @@ export async function generateVideo(
   exportCanvas.width = EXPORT_SETTINGS.WIDTH;
   exportCanvas.height = EXPORT_SETTINGS.HEIGHT;
 
-  const { Muxer, ArrayBufferTarget } = await import("mp4-muxer");
-  const target = new ArrayBufferTarget();
-  const muxer = new Muxer({
+  const {
+    BufferTarget,
+    EncodedPacket,
+    EncodedVideoPacketSource,
+    Mp4OutputFormat,
+    Output,
+  } = await import("mediabunny");
+  const target = new BufferTarget();
+  const output = new Output({
+    format: new Mp4OutputFormat({
+      fastStart: EXPORT_SETTINGS.FAST_START,
+    }),
     target,
-    video: {
-      codec: EXPORT_SETTINGS.VIDEO_CODEC,
-      width: EXPORT_SETTINGS.WIDTH,
-      height: EXPORT_SETTINGS.HEIGHT,
-    },
-    fastStart: EXPORT_SETTINGS.FAST_START,
   });
+  const videoSource = new EncodedVideoPacketSource(EXPORT_SETTINGS.VIDEO_CODEC);
+  output.addVideoTrack(videoSource);
+  await output.start();
 
   let encError: Error | null = null;
+  let packetWriteError: Error | null = null;
+  let packetWriteQueue = Promise.resolve();
   const encoder = new VideoEncoder({
-    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    output: (chunk, meta) => {
+      const packet = EncodedPacket.fromEncodedChunk(chunk);
+      packetWriteQueue = packetWriteQueue
+        .then(() => videoSource.add(packet, meta))
+        .catch((e) => {
+          packetWriteError =
+            packetWriteError ?? (e instanceof Error ? e : new Error(String(e)));
+        });
+    },
     error: (e) => {
       encError = e instanceof Error ? e : new Error(String(e));
     },
@@ -166,8 +182,14 @@ export async function generateVideo(
 
   if (encError) throw encError;
   await encoder.flush();
+  await packetWriteQueue;
   encoder.close();
-  muxer.finalize();
+  if (packetWriteError) throw packetWriteError;
+  await output.finalize();
+
+  if (!target.buffer) {
+    throw new Error("Failed to finalize MP4 output.");
+  }
 
   return target.buffer;
 }

@@ -109,12 +109,17 @@ export const getBrightness = (progress: number) => {
   return mix(1.2, 1, (progress - 0.78) / 0.22);
 };
 
-export const getBloomShadow = (progress: number, glowColor: RgbColor) => {
+export const getBloomShadow = (
+  progress: number,
+  glowColor: RgbColor,
+  glowScale = 1,
+) => {
   const bounded = clamp(progress, 0, 1);
-  const coreBlur = mix(32, 82, bounded);
-  const coreSpread = mix(8, 22, bounded);
-  const hazeBlur = mix(64, 180, bounded);
-  const hazeSpread = mix(22, 68, bounded);
+  const scale = clamp(glowScale, 0.25, 3);
+  const coreBlur = mix(32, 82, bounded) * scale;
+  const coreSpread = mix(8, 22, bounded) * scale;
+  const hazeBlur = mix(64, 180, bounded) * scale;
+  const hazeSpread = mix(22, 68, bounded) * scale;
   const liftShadow = mix(18, 32, bounded);
 
   return [

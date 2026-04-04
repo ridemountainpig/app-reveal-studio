@@ -4,55 +4,45 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppReveal } from "../../components/AppReveal";
 import { generateVideo } from "../../lib/exportVideo";
-import { EXPORT_SETTINGS } from "../../constants/exportSettings";
-import { initialControls } from "../../utils/revealControls";
-
-const EXPORT_PAYLOAD_STORAGE_KEY = "app-reveal-export-payload";
-
-type RenderControls = {
-  title: string;
-  subtitle: string;
-  ctaLabel: string;
-  badgePrefix: string;
-  iconUrl?: string;
-  badgeIconUrl?: string;
-  iconCornerRadius: number;
-  durationMs: number;
-  playbackRate: number;
-  glowColor: string;
-  rimColor: string;
-  grayColor: string;
-};
-
-function readRenderControls(
-  readValue: (key: string) => string | undefined,
-): RenderControls {
-  return {
-    title: readValue("title") || initialControls.title,
-    subtitle: readValue("subtitle") || initialControls.subtitle,
-    ctaLabel: readValue("ctaLabel") || initialControls.badgeLabel,
-    badgePrefix: readValue("badgePrefix") || initialControls.badgePrefix,
-    iconUrl: readValue("iconUrl") || undefined,
-    badgeIconUrl: readValue("badgeIconUrl") || undefined,
-    iconCornerRadius: Number(
-      readValue("iconCornerRadius") || initialControls.iconCornerRadius,
-    ),
-    durationMs: Number(readValue("durationMs") || initialControls.durationMs),
-    playbackRate: Number(
-      readValue("playbackRate") || initialControls.playbackRate,
-    ),
-    glowColor: readValue("glowColor") || initialControls.glowColor,
-    rimColor: readValue("rimColor") || initialControls.rimColor,
-    grayColor: readValue("grayColor") || initialControls.grayColor,
-  };
-}
+import {
+  EXPORT_PAYLOAD_STORAGE_KEY,
+  EXPORT_SETTINGS,
+} from "../../constants/exportSettings";
+import {
+  readRenderControls,
+  type RenderControls,
+} from "../../utils/renderControls";
 
 declare global {
   interface Window {
     __EXPORT_DONE__?: boolean;
-    __EXPORT_RESULT__?: ArrayBuffer;
+    __EXPORT_RESULT_BASE64__?: string;
     __EXPORT_ERROR__?: string;
   }
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Failed to serialize export result."));
+        return;
+      }
+
+      const commaIndex = reader.result.indexOf(",");
+      resolve(
+        commaIndex === -1 ? reader.result : reader.result.slice(commaIndex + 1),
+      );
+    };
+
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Failed to serialize export result."));
+    };
+
+    reader.readAsDataURL(new Blob([buffer], { type: "video/mp4" }));
+  });
 }
 
 export default function RenderPage() {
@@ -107,6 +97,7 @@ function RenderPageInner() {
     title,
     subtitle,
     ctaLabel,
+    badgeVariant,
     badgePrefix,
     iconUrl,
     badgeIconUrl,
@@ -114,8 +105,10 @@ function RenderPageInner() {
     durationMs,
     playbackRate,
     glowColor,
+    glowSize,
     rimColor,
     grayColor,
+    layerTransforms,
   } = renderControls;
 
   useEffect(() => {
@@ -134,7 +127,7 @@ function RenderPageInner() {
       try {
         const timelineControl = timelineRef.current;
         const buffer = await generateVideo(node, durationMs, timelineControl);
-        window.__EXPORT_RESULT__ = buffer;
+        window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
         window.__EXPORT_DONE__ = true;
       } catch (err) {
         window.__EXPORT_ERROR__ =
@@ -157,6 +150,7 @@ function RenderPageInner() {
             title={title}
             subtitle={subtitle}
             ctaLabel={ctaLabel}
+            badgeVariant={badgeVariant}
             badgePrefix={badgePrefix}
             iconCornerRadius={iconCornerRadius}
             durationMs={durationMs}
@@ -167,8 +161,10 @@ function RenderPageInner() {
             badgeIconUrl={badgeIconUrl}
             badgeIconAlt={ctaLabel}
             glowColor={glowColor}
+            glowSize={glowSize}
             rimColor={rimColor}
             grayColor={grayColor}
+            layerTransforms={layerTransforms}
             timelineRef={timelineRef}
           />
         </div>
