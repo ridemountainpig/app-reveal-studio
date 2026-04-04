@@ -21,6 +21,10 @@ import {
   parseHexColor,
 } from "../utils/revealMath";
 import {
+  INITIAL_REVEAL_CONTENT_OPACITY,
+  MID_REVEAL_CONTENT_OPACITY,
+} from "../constants/animations";
+import {
   RevealBadge,
   RevealIcon,
   RevealSubtitle,
@@ -177,7 +181,8 @@ export function AppReveal({
   const contentOpacity = useTransform(
     revealProgress,
     [0, 0.32, 0.8],
-    [0.06, 0.2, 1],
+    // Keep first frame visible on mobile to avoid intermittent all-black startup.
+    [INITIAL_REVEAL_CONTENT_OPACITY, MID_REVEAL_CONTENT_OPACITY, 1],
   );
   const rimOpacity = useTransform(revealProgress, [0, 0.5, 1], [0.2, 0.8, 1]);
 
