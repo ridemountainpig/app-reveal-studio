@@ -190,6 +190,7 @@ export function RevealSurface({
   return (
     <motion.div
       className="absolute inset-0 z-10 overflow-hidden rounded-[inherit] border"
+      initial={{ opacity: 0.2 }}
       style={{
         ...getSurfaceChrome(rimColor),
         opacity: contentOpacity,
@@ -301,7 +302,7 @@ export function RevealIcon({
 
   return (
     <motion.div
-      className="absolute inset-0 isolate z-20 grid place-items-center filter-[drop-shadow(0_16px_18px_rgba(0,0,0,0.46))]"
+      className="absolute inset-0 isolate z-20 grid place-items-center"
       style={{
         opacity: glyphShellOpacity,
         maskImage,

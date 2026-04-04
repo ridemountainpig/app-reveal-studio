@@ -177,7 +177,7 @@ export function AppReveal({
   const contentOpacity = useTransform(
     revealProgress,
     [0, 0.32, 0.8],
-    [0.06, 0.2, 1],
+    [0.16, 0.24, 1],
   );
   const rimOpacity = useTransform(revealProgress, [0, 0.5, 1], [0.2, 0.8, 1]);
 
