@@ -1,3 +1,6 @@
+export const INITIAL_REVEAL_CONTENT_OPACITY = 0.16;
+export const MID_REVEAL_CONTENT_OPACITY = 0.24;
+
 export const ANIMATION_KEYFRAMES = {
   glyphShell: {
     opacityInput: [0.04, 0.22, 1],

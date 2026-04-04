@@ -9,7 +9,10 @@ import {
   toRgba,
   WHITE_RGB,
 } from "../utils/revealMath";
-import { ANIMATION_KEYFRAMES } from "../constants/animations";
+import {
+  ANIMATION_KEYFRAMES,
+  INITIAL_REVEAL_CONTENT_OPACITY,
+} from "../constants/animations";
 import type {
   NumericMotionValue,
   RgbColor,
@@ -190,7 +193,7 @@ export function RevealSurface({
   return (
     <motion.div
       className="absolute inset-0 z-10 overflow-hidden rounded-[inherit] border"
-      initial={{ opacity: 0.2 }}
+      initial={{ opacity: INITIAL_REVEAL_CONTENT_OPACITY }}
       style={{
         ...getSurfaceChrome(rimColor),
         opacity: contentOpacity,
