@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { startTransition, useCallback, useState } from "react";
+import { startTransition, useCallback, useRef, useState } from "react";
 import { RevealPreview } from "../components/RevealPreview";
 import { RevealControlsPanel } from "../components/RevealControlsPanel";
 import { useExportVideo } from "../hooks/useExportVideo";
@@ -54,6 +54,16 @@ export default function Home() {
     });
   }, []);
 
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const turnstileTokenRef = useRef<string | null>(null);
+  const handleTurnstileToken = useCallback((token: string | null) => {
+    turnstileTokenRef.current = token;
+  }, []);
+  const getTurnstileToken = useCallback(() => turnstileTokenRef.current, []);
+  const onExportTurnstileReset = useCallback(() => {
+    turnstileTokenRef.current = null;
+  }, []);
+
   const exportPayload = getExportPayload({
     safeTitle,
     safeSubtitle,
@@ -66,9 +76,16 @@ export default function Home() {
   });
 
   const { isExporting, isCancelling, exportStatus, exportVideo, cancelExport } =
-    useExportVideo({
-      payload: exportPayload,
-    });
+    useExportVideo(
+      turnstileSiteKey
+        ? {
+            payload: exportPayload,
+            turnstileRequired: true,
+            getTurnstileToken,
+            onExportSettled: onExportTurnstileReset,
+          }
+        : { payload: exportPayload },
+    );
 
   const previewPadding = isPanelCollapsed ? "" : "xl:pr-[27rem]";
 
@@ -83,7 +100,7 @@ export default function Home() {
         className={buttonStyles.cornerLink}
         aria-label="YC — yencheng.dev"
       >
-        Build by YC
+        Built by YC
       </motion.a>
 
       <RevealControlsPanel
@@ -132,6 +149,8 @@ export default function Home() {
         exportStatus={exportStatus}
         isExporting={isExporting}
         isCancelling={isCancelling}
+        turnstileSiteKey={turnstileSiteKey}
+        onTurnstileToken={handleTurnstileToken}
       />
     </main>
   );

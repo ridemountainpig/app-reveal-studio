@@ -6,6 +6,10 @@ import {
   MAX_EXPORT_PAYLOAD_BYTES,
 } from "@/constants/exportSettings";
 import { logger, serializeError } from "@/lib/logger";
+import {
+  getClientIpFromRequest,
+  verifyTurnstileToken,
+} from "@/lib/verifyTurnstile";
 
 export const runtime = "nodejs";
 
@@ -153,7 +157,6 @@ function releaseExportSlot(clientId: string) {
   activeExportCount = Math.max(0, activeExportCount - 1);
   const nextExport = exportQueue.shift();
   if (nextExport) {
-    nextExport.cleanup();
     nextExport.grant();
   }
 }
@@ -238,6 +241,32 @@ export async function POST(request: Request) {
     }
     clientIdForSlot = body.clientId;
 
+    const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+    if (turnstileSecret) {
+      const token =
+        typeof body.turnstileToken === "string"
+          ? body.turnstileToken.trim()
+          : "";
+      if (!token) {
+        return NextResponse.json(
+          { error: "Verification required." },
+          { status: 403 },
+        );
+      }
+      const ip = getClientIpFromRequest(request);
+      const ok = await verifyTurnstileToken({
+        secret: turnstileSecret,
+        token,
+        ip,
+      });
+      if (!ok) {
+        return NextResponse.json(
+          { error: "Verification failed." },
+          { status: 403 },
+        );
+      }
+    }
+
     const exportPayload: Record<string, string> = {};
     for (const key of ALLOWED_PARAMS) {
       const value = body[key];
@@ -260,12 +289,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const host =
-      request.headers.get("x-forwarded-host") ??
-      request.headers.get("host") ??
-      "localhost:3000";
-    const protocol = request.headers.get("x-forwarded-proto") ?? "http";
-    const baseUrl = `${protocol}://${host}`;
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ??
+      (() => {
+        const host =
+          request.headers.get("x-forwarded-host") ??
+          request.headers.get("host") ??
+          "localhost:3000";
+        const protocol = request.headers.get("x-forwarded-proto") ?? "http";
+        return `${protocol}://${host}`;
+      })();
     const renderUrl = `${baseUrl}/render?renderMode=export`;
     routeLogger.info({
       event: "render.started",

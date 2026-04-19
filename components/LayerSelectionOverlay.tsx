@@ -9,7 +9,7 @@ type LayerSelectionOverlayProps = {
     corner: ScaleCorner,
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => void;
-  /** Thicker highlight while dragging/scaling; selection frame is always visible */
+  /** When true, show the blue dashed frame (active drag/scale only). */
   showGestureFrame?: boolean;
 };
 
@@ -33,15 +33,14 @@ export function LayerSelectionOverlay({
 }: LayerSelectionOverlayProps) {
   return (
     <div className="pointer-events-none absolute inset-0 z-30">
-      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+      {showGestureFrame ? (
         <div
-          className={`absolute inset-0 rounded-[inherit] border-dashed border-[#4af] ${
-            showGestureFrame
-              ? "border-2 border-[#6cf]"
-              : "border border-[#4af]/90"
-          }`}
-        />
-      </div>
+          className="pointer-events-none absolute inset-0"
+          aria-hidden="true"
+        >
+          <div className="absolute inset-0 rounded-[inherit] border-2 border-dashed border-[#6cf]" />
+        </div>
+      ) : null}
       {(
         [
           ["nw", 0, 0],

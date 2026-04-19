@@ -30,16 +30,25 @@ type GetExportPayloadOptions = {
   previewControls: ExportPayloadControls;
 };
 
-/** Appends `clientId` to a JSON object string without re-stringifying all fields. */
+/** Appends `clientId` (and optional Turnstile token) without re-stringifying all fields. */
 export function appendClientIdToPayloadJson(
   serializedPayload: string,
   clientId: string,
+  options?: { turnstileToken?: string },
 ): string {
   if (serializedPayload.length <= 1) {
-    return JSON.stringify({ clientId });
+    const base: Record<string, string> = { clientId };
+    if (options?.turnstileToken) {
+      base.turnstileToken = options.turnstileToken;
+    }
+    return JSON.stringify(base);
   }
 
-  return `${serializedPayload.slice(0, -1)},"clientId":${JSON.stringify(clientId)}}`;
+  let out = `${serializedPayload.slice(0, -1)},"clientId":${JSON.stringify(clientId)}`;
+  if (options?.turnstileToken) {
+    out += `,"turnstileToken":${JSON.stringify(options.turnstileToken)}`;
+  }
+  return `${out}}`;
 }
 
 export function getExportPayload({
