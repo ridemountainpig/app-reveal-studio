@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppReveal } from "../../components/AppReveal";
-import { generateVideo } from "../../lib/exportVideo";
 import {
   EXPORT_PAYLOAD_STORAGE_KEY,
   EXPORT_SETTINGS,
@@ -15,35 +14,30 @@ import {
 
 declare global {
   interface Window {
-    __EXPORT_DONE__?: boolean;
-    __EXPORT_RESULT_BASE64__?: string;
+    __EXPORT_READY__?: boolean;
     __EXPORT_ERROR__?: string;
+    __setTimelineProgress?: (progress: number) => Promise<void>;
   }
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+const waitForNextPaint = () =>
+  new Promise<void>((r) => requestAnimationFrame(() => r()));
 
-    reader.onloadend = () => {
-      if (typeof reader.result !== "string") {
-        reject(new Error("Failed to serialize export result."));
-        return;
-      }
-
-      const commaIndex = reader.result.indexOf(",");
-      resolve(
-        commaIndex === -1 ? reader.result : reader.result.slice(commaIndex + 1),
-      );
-    };
-
-    reader.onerror = () => {
-      reject(reader.error ?? new Error("Failed to serialize export result."));
-    };
-
-    reader.readAsDataURL(new Blob([buffer], { type: "video/mp4" }));
-  });
-}
+const waitForImages = async (container: HTMLElement) => {
+  const imgs = Array.from(container.querySelectorAll("img"));
+  await Promise.all(
+    imgs.map((img) =>
+      img.complete && img.naturalWidth > 0
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            const done = () => resolve();
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+            setTimeout(done, EXPORT_SETTINGS.IMAGE_LOAD_TIMEOUT_MS);
+          }),
+    ),
+  );
+};
 
 export default function RenderPage() {
   return (
@@ -59,14 +53,16 @@ function RenderPageInner() {
   const hasStarted = useRef(false);
   const timelineRef = useRef<{ set: (value: number) => void } | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [isExportMode, setIsExportMode] = useState(false);
   const [renderControls, setRenderControls] = useState<RenderControls>(() =>
     readRenderControls((key) => searchParams.get(key) ?? undefined),
   );
 
   useEffect(() => {
-    const isExportMode = searchParams.get("renderMode") === "export";
+    const exportMode = searchParams.get("renderMode") === "export";
+    setIsExportMode(exportMode);
 
-    if (!isExportMode) {
+    if (!exportMode) {
       setRenderControls(
         readRenderControls((key) => searchParams.get(key) ?? undefined),
       );
@@ -89,7 +85,7 @@ function RenderPageInner() {
     } catch (error) {
       window.__EXPORT_ERROR__ =
         error instanceof Error ? error.message : "Invalid export payload.";
-      window.__EXPORT_DONE__ = true;
+      window.__EXPORT_READY__ = true;
     }
   }, [searchParams]);
 
@@ -112,32 +108,61 @@ function RenderPageInner() {
   } = renderControls;
 
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || !isExportMode) return;
     if (hasStarted.current) return;
     hasStarted.current = true;
 
-    const timer = setTimeout(async () => {
+    let cancelled = false;
+
+    const setup = async () => {
       const node = captureRef.current;
       if (!node) {
-        window.__EXPORT_ERROR__ = "Capture node not found.";
-        window.__EXPORT_DONE__ = true;
-        return;
+        throw new Error("Capture node not found.");
       }
 
-      try {
-        const timelineControl = timelineRef.current;
-        const buffer = await generateVideo(node, durationMs, timelineControl);
-        window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
-        window.__EXPORT_DONE__ = true;
-      } catch (err) {
-        window.__EXPORT_ERROR__ =
-          err instanceof Error ? err.message : "Export failed.";
-        window.__EXPORT_DONE__ = true;
+      if (typeof document !== "undefined" && "fonts" in document) {
+        await document.fonts.ready;
       }
-    }, EXPORT_SETTINGS.EXPORT_START_DELAY_MS);
 
-    return () => clearTimeout(timer);
-  }, [durationMs, isReady]);
+      await waitForImages(node);
+      await waitForNextPaint();
+      if (cancelled) return;
+
+      const rect = node.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) {
+        throw new Error("Invalid preview size.");
+      }
+
+      const scale = Math.min(
+        EXPORT_SETTINGS.WIDTH / rect.width,
+        EXPORT_SETTINGS.HEIGHT / rect.height,
+      );
+      node.style.transform = `scale(${scale})`;
+      node.style.transformOrigin = "center center";
+
+      timelineRef.current?.set(0);
+
+      window.__setTimelineProgress = (progress: number) =>
+        new Promise<void>((resolve) => {
+          timelineRef.current?.set(progress);
+          requestAnimationFrame(() => resolve());
+        });
+
+      await waitForNextPaint();
+      await waitForNextPaint();
+      window.__EXPORT_READY__ = true;
+    };
+
+    setup().catch((error) => {
+      window.__EXPORT_ERROR__ =
+        error instanceof Error ? error.message : "Export setup failed.";
+      window.__EXPORT_READY__ = true;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady, isExportMode]);
 
   return (
     <div
@@ -145,7 +170,7 @@ function RenderPageInner() {
       style={{ width: 1080, height: 1920 }}
     >
       {isReady ? (
-        <div ref={captureRef} className="px-12 py-16">
+        <div ref={captureRef} className={isExportMode ? "" : "px-12 py-16"}>
           <AppReveal
             title={title}
             subtitle={subtitle}

@@ -3,8 +3,10 @@ import type { Browser, Page } from "puppeteer";
 
 import {
   EXPORT_PAYLOAD_STORAGE_KEY,
+  EXPORT_SETTINGS,
   MAX_EXPORT_PAYLOAD_BYTES,
 } from "@/constants/exportSettings";
+import { FfmpegEncoder } from "@/lib/ffmpegEncoder";
 import { logger, serializeError } from "@/lib/logger";
 import {
   getClientIpFromRequest,
@@ -32,8 +34,9 @@ const ALLOWED_PARAMS = [
 ] as const;
 
 const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
-const BROWSER_TIMEOUT = 480000; // 8 minutes
+const RENDER_TIMEOUT = 480000; // 8 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
+const EXPORT_READY_TIMEOUT = 30000; // 30 seconds for scene bootstrap
 const MAX_CONCURRENT_EXPORTS = 1;
 const BYTES_PER_MB = 1024 * 1024;
 
@@ -60,6 +63,7 @@ function throwIfAborted(signal?: AbortSignal) {
 
 let browserPromise: Promise<Awaited<ReturnType<typeof getBrowser>>> | null =
   null;
+let idlePage: Page | null = null;
 let activeExportCount = 0;
 type QueueEntry = {
   clientId: string;
@@ -78,8 +82,8 @@ async function getBrowser() {
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
-      "--disable-gpu",
       "--hide-scrollbars",
+      "--font-render-hinting=none",
     ],
   });
 }
@@ -90,6 +94,7 @@ async function getSharedBrowser() {
       .then((browser) => {
         browser.on("disconnected", () => {
           browserPromise = null;
+          idlePage = null;
         });
         return browser;
       })
@@ -100,6 +105,33 @@ async function getSharedBrowser() {
   }
 
   return browserPromise;
+}
+
+async function getOrCreatePage(
+  browser: Awaited<ReturnType<typeof getBrowser>>,
+): Promise<Page> {
+  if (idlePage) {
+    const p = idlePage;
+    idlePage = null;
+    return p;
+  }
+  const p = await browser.newPage();
+  await p.setViewport({
+    width: EXPORT_SETTINGS.WIDTH,
+    height: EXPORT_SETTINGS.HEIGHT,
+    deviceScaleFactor: 1,
+  });
+  return p;
+}
+
+async function recyclePage(page: Page): Promise<void> {
+  try {
+    await page.goto("about:blank", { waitUntil: "load", timeout: 5000 });
+    idlePage = page;
+  } catch {
+    idlePage = null;
+    await page.close().catch(() => {});
+  }
 }
 
 async function acquireExportSlot(clientId: string, signal?: AbortSignal) {
@@ -202,11 +234,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   let browser: Browser | undefined;
   let page: Page | undefined;
+  let encoder: FfmpegEncoder | undefined;
   let hasSlot = false;
   let clientIdForSlot: string | undefined;
   let slotAcquiredAt: number | undefined;
   let queueWaitSeconds: number | undefined;
   let removeAbortListener: (() => void) | undefined;
+  let evalScriptId: string | undefined;
+  let pageWasClosed = false;
+  let exportSucceeded = false;
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   const routeLogger = logger.child({
@@ -289,6 +325,11 @@ export async function POST(request: Request) {
       );
     }
 
+    const durationMs = Number(exportPayload.durationMs);
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+      return NextResponse.json({ error: "Invalid duration." }, { status: 400 });
+    }
+
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ??
       (() => {
@@ -302,9 +343,7 @@ export async function POST(request: Request) {
     const renderUrl = `${baseUrl}/render?renderMode=export`;
     routeLogger.info({
       event: "render.started",
-      durationSeconds: exportPayload.durationMs
-        ? msToSeconds(Number(exportPayload.durationMs))
-        : null,
+      durationSeconds: msToSeconds(durationMs),
     });
 
     const beforeSlotAcquire = Date.now();
@@ -314,7 +353,9 @@ export async function POST(request: Request) {
     hasSlot = true;
 
     const onAbort = () => {
+      pageWasClosed = true;
       void page?.close().catch(() => {});
+      void encoder?.dispose();
     };
     request.signal.addEventListener("abort", onAbort, { once: true });
     removeAbortListener = () => {
@@ -324,22 +365,23 @@ export async function POST(request: Request) {
 
     browser = await getSharedBrowser();
     throwIfAborted(request.signal);
-    page = await browser.newPage();
+    page = await getOrCreatePage(browser);
     throwIfAborted(request.signal);
-    await page.setViewport({ width: 1080, height: 1920 });
-    page.on("pageerror", (error) => {
+    const onPageError = (error: unknown) => {
       routeLogger.error({
         event: "render.pageerror",
         error: serializeError(error),
       });
-    });
+    };
+    page.on("pageerror", onPageError);
 
-    await page.evaluateOnNewDocument(
+    const { identifier } = await page.evaluateOnNewDocument(
       ({ storageKey, payload }) => {
         window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
       },
       { storageKey: EXPORT_PAYLOAD_STORAGE_KEY, payload: exportPayload },
     );
+    evalScriptId = identifier;
 
     await page.goto(renderUrl, {
       waitUntil: "domcontentloaded",
@@ -347,41 +389,77 @@ export async function POST(request: Request) {
     });
     throwIfAborted(request.signal);
 
-    await page.waitForFunction("window.__EXPORT_DONE__ === true", {
-      timeout: BROWSER_TIMEOUT,
+    await page.waitForFunction("window.__EXPORT_READY__ === true", {
+      timeout: EXPORT_READY_TIMEOUT,
     });
     throwIfAborted(request.signal);
 
-    const errorMsg = await page.evaluate(
-      () =>
-        (window as unknown as { __EXPORT_ERROR__?: string }).__EXPORT_ERROR__,
+    const setupError = await page.evaluate(
+      () => window.__EXPORT_ERROR__ ?? null,
     );
-    if (errorMsg) {
+    if (setupError) {
       const now = Date.now();
       routeLogger.error({
         event: "render.failed.in_page",
-        errorMessage: errorMsg,
+        errorMessage: setupError,
         elapsedSeconds: msToSeconds(now - startedAt),
         ...(queueWaitSeconds !== undefined ? { queueWaitSeconds } : {}),
         ...(slotAcquiredAt !== undefined
           ? { renderSeconds: msToSeconds(now - slotAcquiredAt) }
           : {}),
       });
-      return NextResponse.json({ error: errorMsg }, { status: 500 });
+      return NextResponse.json({ error: setupError }, { status: 500 });
     }
 
-    const videoBase64 = await page.evaluate(
-      () =>
-        (window as unknown as { __EXPORT_RESULT_BASE64__?: string })
-          .__EXPORT_RESULT_BASE64__,
+    const frameTotal = Math.max(
+      1,
+      Math.ceil((durationMs / 1000) * EXPORT_SETTINGS.FRAME_RATE),
     );
-    throwIfAborted(request.signal);
+    const clip = {
+      x: 0,
+      y: 0,
+      width: EXPORT_SETTINGS.WIDTH,
+      height: EXPORT_SETTINGS.HEIGHT,
+    };
 
-    if (!videoBase64) {
-      throw new Error("Export result missing.");
+    encoder = await FfmpegEncoder.create({
+      frameRate: EXPORT_SETTINGS.FRAME_RATE,
+      bitrate: EXPORT_SETTINGS.BITRATE,
+    });
+
+    const renderDeadline = slotAcquiredAt + RENDER_TIMEOUT;
+
+    for (let i = 0; i < frameTotal; i++) {
+      if (Date.now() > renderDeadline) {
+        throw new Error("Render timed out.");
+      }
+      throwIfAborted(request.signal);
+
+      const progress = frameTotal === 1 ? 1 : i / (frameTotal - 1);
+
+      await page.evaluate(
+        (p) =>
+          window.__setTimelineProgress
+            ? window.__setTimelineProgress(p)
+            : undefined,
+        progress,
+      );
+
+      const screenshot = (await page.screenshot({
+        type: "jpeg",
+        quality: 92,
+        clip,
+        omitBackground: false,
+        captureBeyondViewport: false,
+        optimizeForSpeed: true,
+      })) as Uint8Array;
+
+      await encoder.writeFrame(Buffer.from(screenshot));
     }
 
-    const videoBuffer = Buffer.from(videoBase64, "base64");
+    const videoBuffer = await encoder.finish();
+    encoder = undefined;
+
     const now = Date.now();
     routeLogger.info({
       event: "render.completed",
@@ -389,9 +467,14 @@ export async function POST(request: Request) {
       elapsedSeconds: msToSeconds(now - startedAt),
       queueWaitSeconds: queueWaitSeconds ?? 0,
       renderSeconds: msToSeconds(now - slotAcquiredAt!),
+      frameCount: frameTotal,
     });
 
-    return new NextResponse(videoBuffer, {
+    exportSucceeded = true;
+    const videoBlob = new Blob([new Uint8Array(videoBuffer)], {
+      type: "video/mp4",
+    });
+    return new NextResponse(videoBlob, {
       status: 200,
       headers: {
         "Content-Type": "video/mp4",
@@ -407,14 +490,13 @@ export async function POST(request: Request) {
     const wasAborted =
       request.signal.aborted || message === "Export request aborted.";
 
-    // Provide more specific error messages
     let statusCode = 500;
     let errorMessage = message;
 
     if (wasAborted) {
       statusCode = 499;
       errorMessage = "Export request cancelled.";
-    } else if (message.includes("Timeout")) {
+    } else if (/timed out/i.test(message)) {
       statusCode = 504;
       errorMessage =
         "Video generation timed out. Please try with shorter duration.";
@@ -452,8 +534,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: errorMessage }, { status: statusCode });
   } finally {
     removeAbortListener?.();
-    if (page) {
-      await page.close().catch(() => {});
+    if (encoder) {
+      await encoder.dispose().catch(() => {});
+    }
+    if (page && !pageWasClosed) {
+      if (exportSucceeded) {
+        page.off("pageerror");
+        if (evalScriptId) {
+          await page
+            .removeScriptToEvaluateOnNewDocument(evalScriptId)
+            .catch(() => {});
+        }
+        void recyclePage(page);
+      } else {
+        await page.close().catch(() => {});
+      }
     }
     if (hasSlot && clientIdForSlot) {
       releaseExportSlot(clientIdForSlot);

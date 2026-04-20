@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["puppeteer"],
+  serverExternalPackages: ["puppeteer", "ffmpeg-static"],
 };
 
 export default nextConfig;

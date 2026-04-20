@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
@@ -9,6 +9,9 @@ COPY package.json pnpm-lock.yaml* ./
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN pnpm install --frozen-lockfile
+# Fail fast if ffmpeg-static postinstall didn't download the binary.
+RUN test -x node_modules/ffmpeg-static/ffmpeg \
+    && node_modules/ffmpeg-static/ffmpeg -version | head -n 1
 
 COPY . .
 
@@ -23,7 +26,7 @@ RUN pnpm build
 RUN pnpm exec puppeteer browsers install chrome
 
 # Production stage
-FROM node:20-slim
+FROM node:22-slim
 
 WORKDIR /app
 
@@ -54,6 +57,8 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /app/.next/standalone ./
 # Copy Chrome from builder (version-matched with project's puppeteer)
 COPY --from=builder /root/.cache/puppeteer /root/.cache/puppeteer
+# Copy ffmpeg-static binary (Next.js file tracer doesn't pick up the native binary)
+COPY --from=builder /app/node_modules/ffmpeg-static ./node_modules/ffmpeg-static
 # Copy static assets
 COPY --from=builder /app/.next/static ./.next/static
 # Copy public assets
