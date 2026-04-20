@@ -9,14 +9,29 @@ import { exportMessages, formatExportQueueStatus } from "../utils/styles";
 const SUCCESS_RESET_MS = 2400;
 const EXPORT_QUEUE_POLL_MS = 5000;
 
-type UseExportVideoOptions = {
-  payload: ExportPayload;
-  filename?: string;
-};
+type UseExportVideoOptions =
+  | {
+      payload: ExportPayload;
+      filename?: string;
+      turnstileRequired: true;
+      getTurnstileToken: () => string | null | undefined;
+      /** After export completes or errors (including cancel); reset Turnstile widget. */
+      onExportSettled?: () => void;
+    }
+  | {
+      payload: ExportPayload;
+      filename?: string;
+      turnstileRequired?: false;
+      getTurnstileToken?: never;
+      onExportSettled?: never;
+    };
 
 export function useExportVideo({
   payload,
   filename = "app-reveal.mp4",
+  turnstileRequired = false,
+  getTurnstileToken,
+  onExportSettled,
 }: UseExportVideoOptions) {
   const exportAbortControllerRef = useRef<AbortController | null>(null);
   const stopPollingRef = useRef<(() => void) | null>(null);
@@ -50,6 +65,15 @@ export function useExportVideo({
       return;
     }
 
+    if (turnstileRequired) {
+      const token = getTurnstileToken?.() ?? null;
+      if (!token || !String(token).trim()) {
+        setExportStatus("Complete verification first.");
+        setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
+        return;
+      }
+    }
+
     const clientId = crypto.randomUUID();
     const exportController = new AbortController();
     exportAbortControllerRef.current = exportController;
@@ -71,6 +95,11 @@ export function useExportVideo({
       const requestBody = appendClientIdToPayloadJson(
         serializedPayload,
         clientId,
+        turnstileRequired
+          ? {
+              turnstileToken: String(getTurnstileToken?.() ?? "").trim(),
+            }
+          : undefined,
       );
 
       let pollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -195,13 +224,23 @@ export function useExportVideo({
       );
       setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
     } finally {
+      if (turnstileRequired && onExportSettled) {
+        onExportSettled();
+      }
       if (exportAbortControllerRef.current === exportController) {
         exportAbortControllerRef.current = null;
       }
       setIsCancelling(false);
       setIsExporting(false);
     }
-  }, [filename, isExporting, payload]);
+  }, [
+    filename,
+    getTurnstileToken,
+    isExporting,
+    onExportSettled,
+    payload,
+    turnstileRequired,
+  ]);
 
   return {
     isExporting,

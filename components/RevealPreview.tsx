@@ -1,7 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useCallback, useState } from "react";
 import { AppReveal } from "./AppReveal";
+import { ExportVerifyDialog } from "./ExportVerifyDialog";
 import type {
   BadgeVariant,
   EditableLayerId,
@@ -38,6 +40,8 @@ type RevealPreviewProps = {
   exportStatus: string;
   isExporting: boolean;
   isCancelling: boolean;
+  turnstileSiteKey?: string;
+  onTurnstileToken: (token: string | null) => void;
 };
 
 export function RevealPreview({
@@ -65,7 +69,52 @@ export function RevealPreview({
   exportStatus,
   isExporting,
   isCancelling,
+  turnstileSiteKey,
+  onTurnstileToken,
 }: RevealPreviewProps) {
+  const [exportVerifyOpen, setExportVerifyOpen] = useState(false);
+  const [dialogTurnstileKey, setDialogTurnstileKey] = useState(0);
+
+  const handleDownloadClick = useCallback(() => {
+    if (isExporting || isCancelling) {
+      return;
+    }
+    if (turnstileSiteKey) {
+      if (exportVerifyOpen) {
+        return;
+      }
+      setDialogTurnstileKey((k) => k + 1);
+      setExportVerifyOpen(true);
+      return;
+    }
+    onExportVideo();
+  }, [
+    exportVerifyOpen,
+    isCancelling,
+    isExporting,
+    onExportVideo,
+    turnstileSiteKey,
+  ]);
+
+  const handleVerifyDialogClose = useCallback(
+    (open: boolean) => {
+      setExportVerifyOpen(open);
+      if (!open) {
+        onTurnstileToken(null);
+      }
+    },
+    [onTurnstileToken],
+  );
+
+  const handleTurnstileVerified = useCallback(
+    (token: string) => {
+      onTurnstileToken(token);
+      setExportVerifyOpen(false);
+      onExportVideo();
+    },
+    [onExportVideo, onTurnstileToken],
+  );
+
   return (
     <div
       className={`flex w-full min-w-0 flex-col items-center ${previewPadding} py-6 pb-10 sm:py-8 sm:pb-12`}
@@ -135,7 +184,7 @@ export function RevealPreview({
               type="button"
               whileHover={isCancelling ? undefined : { scale: 1.03 }}
               whileTap={isCancelling ? undefined : { scale: 0.98 }}
-              onClick={isExporting ? onCancelExport : onExportVideo}
+              onClick={isExporting ? onCancelExport : handleDownloadClick}
               disabled={isCancelling}
               className={buttonStyles.export}
               aria-label={
@@ -257,6 +306,16 @@ export function RevealPreview({
           Drag title, subtitle, icon, or badge to move, use blue corner handles
           to scale.
         </p>
+      ) : null}
+
+      {turnstileSiteKey ? (
+        <ExportVerifyDialog
+          open={exportVerifyOpen}
+          onOpenChange={handleVerifyDialogClose}
+          siteKey={turnstileSiteKey}
+          widgetKey={dialogTurnstileKey}
+          onVerified={handleTurnstileVerified}
+        />
       ) : null}
     </div>
   );
