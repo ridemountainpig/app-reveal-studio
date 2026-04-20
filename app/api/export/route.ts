@@ -243,6 +243,7 @@ export async function POST(request: Request) {
   let evalScriptId: string | undefined;
   let pageWasClosed = false;
   let exportSucceeded = false;
+  let onPageError: ((error: unknown) => void) | undefined;
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   const routeLogger = logger.child({
@@ -367,7 +368,7 @@ export async function POST(request: Request) {
     throwIfAborted(request.signal);
     page = await getOrCreatePage(browser);
     throwIfAborted(request.signal);
-    const onPageError = (error: unknown) => {
+    onPageError = (error: unknown) => {
       routeLogger.error({
         event: "render.pageerror",
         error: serializeError(error),
@@ -539,13 +540,15 @@ export async function POST(request: Request) {
     }
     if (page && !pageWasClosed) {
       if (exportSucceeded) {
-        page.off("pageerror");
+        if (onPageError) {
+          page.off("pageerror", onPageError);
+        }
         if (evalScriptId) {
           await page
             .removeScriptToEvaluateOnNewDocument(evalScriptId)
             .catch(() => {});
         }
-        void recyclePage(page);
+        await recyclePage(page);
       } else {
         await page.close().catch(() => {});
       }
