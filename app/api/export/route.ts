@@ -10,6 +10,11 @@ import {
   getClientIpFromRequest,
   verifyTurnstileToken,
 } from "@/lib/verifyTurnstile";
+import {
+  consumeDailyExportQuota,
+  getExportQuotaConfig,
+  releaseExportQuota,
+} from "@/lib/exportQuota";
 
 export const runtime = "nodejs";
 
@@ -207,6 +212,7 @@ export async function POST(request: Request) {
   let slotAcquiredAt: number | undefined;
   let queueWaitSeconds: number | undefined;
   let removeAbortListener: (() => void) | undefined;
+  let quotaConsumedIp: string | undefined;
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   const routeLogger = logger.child({
@@ -215,6 +221,7 @@ export async function POST(request: Request) {
   });
 
   try {
+    const quotaConfig = getExportQuotaConfig();
     const contentLength = request.headers.get("content-length");
 
     if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
@@ -240,6 +247,7 @@ export async function POST(request: Request) {
       );
     }
     clientIdForSlot = body.clientId;
+    const clientIp = getClientIpFromRequest(request);
 
     const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
     if (turnstileSecret) {
@@ -253,11 +261,10 @@ export async function POST(request: Request) {
           { status: 403 },
         );
       }
-      const ip = getClientIpFromRequest(request);
       const ok = await verifyTurnstileToken({
         secret: turnstileSecret,
         token,
-        ip,
+        ip: clientIp,
       });
       if (!ok) {
         return NextResponse.json(
@@ -287,6 +294,61 @@ export async function POST(request: Request) {
         },
         { status: 413 },
       );
+    }
+
+    if (quotaConfig.enabled && !quotaConfig.isRedisConfigured) {
+      routeLogger.error({
+        event: "quota.misconfigured",
+        limit: quotaConfig.limit,
+      });
+      return NextResponse.json(
+        { error: "Export quota is unavailable. Please try again later." },
+        { status: 503 },
+      );
+    }
+
+    if (quotaConfig.enabled) {
+      if (!clientIp) {
+        routeLogger.warn({ event: "quota.missing_ip" });
+        return NextResponse.json(
+          { error: "Unable to determine client IP for export quota." },
+          { status: 400 },
+        );
+      }
+
+      const quotaStatus = await consumeDailyExportQuota(clientIp);
+      if (!quotaStatus.allowed) {
+        routeLogger.warn({
+          event: "quota.blocked",
+          clientIp,
+          used: quotaStatus.used,
+          limit: quotaStatus.limit,
+          quotaDate: quotaStatus.quotaDate,
+          timeZone: quotaStatus.timeZone,
+        });
+        return NextResponse.json(
+          {
+            error: `Daily export limit reached for this IP. You can export up to ${quotaStatus.limit} times per day.`,
+            limit: quotaStatus.limit,
+            used: quotaStatus.used,
+            remaining: quotaStatus.remaining,
+            quotaDate: quotaStatus.quotaDate,
+            timeZone: quotaStatus.timeZone,
+          },
+          { status: 429 },
+        );
+      }
+
+      quotaConsumedIp = clientIp;
+      routeLogger.info({
+        event: "quota.allowed",
+        clientIp,
+        used: quotaStatus.used,
+        remaining: quotaStatus.remaining,
+        limit: quotaStatus.limit,
+        quotaDate: quotaStatus.quotaDate,
+        timeZone: quotaStatus.timeZone,
+      });
     }
 
     const baseUrl =
@@ -367,6 +429,10 @@ export async function POST(request: Request) {
           ? { renderSeconds: msToSeconds(now - slotAcquiredAt) }
           : {}),
       });
+      if (quotaConsumedIp) {
+        await releaseExportQuota(quotaConsumedIp).catch(() => {});
+        quotaConsumedIp = undefined;
+      }
       return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
 
@@ -435,6 +501,11 @@ export async function POST(request: Request) {
       });
 
       return NextResponse.json({ error: errorMessage }, { status: statusCode });
+    }
+
+    if (quotaConsumedIp) {
+      await releaseExportQuota(quotaConsumedIp).catch(() => {});
+      quotaConsumedIp = undefined;
     }
 
     routeLogger.error({

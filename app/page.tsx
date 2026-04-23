@@ -75,17 +75,24 @@ export default function Home() {
     previewControls,
   });
 
-  const { isExporting, isCancelling, exportStatus, exportVideo, cancelExport } =
-    useExportVideo(
-      turnstileSiteKey
-        ? {
-            payload: exportPayload,
-            turnstileRequired: true,
-            getTurnstileToken,
-            onExportSettled: onExportTurnstileReset,
-          }
-        : { payload: exportPayload },
-    );
+  const {
+    isExporting,
+    isCancelling,
+    exportStatus,
+    exportDialog,
+    exportVideo,
+    cancelExport,
+    dismissExportDialog,
+  } = useExportVideo(
+    turnstileSiteKey
+      ? {
+          payload: exportPayload,
+          turnstileRequired: true,
+          getTurnstileToken,
+          onExportSettled: onExportTurnstileReset,
+        }
+      : { payload: exportPayload },
+  );
 
   const previewPadding = isPanelCollapsed ? "" : "xl:pr-[27rem]";
 
@@ -147,10 +154,12 @@ export default function Home() {
         onExportVideo={exportVideo}
         onCancelExport={cancelExport}
         exportStatus={exportStatus}
+        exportDialog={exportDialog}
         isExporting={isExporting}
         isCancelling={isCancelling}
         turnstileSiteKey={turnstileSiteKey}
         onTurnstileToken={handleTurnstileToken}
+        onDismissExportDialog={dismissExportDialog}
       />
     </main>
   );

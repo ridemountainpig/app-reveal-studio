@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { useCallback, useState } from "react";
 import { AppReveal } from "./AppReveal";
+import { ExportMessageDialog } from "./ExportMessageDialog";
 import { ExportVerifyDialog } from "./ExportVerifyDialog";
 import type {
   BadgeVariant,
@@ -38,10 +39,12 @@ type RevealPreviewProps = {
   onExportVideo: () => void;
   onCancelExport: () => void;
   exportStatus: string;
+  exportDialog: { title: string; message: string } | null;
   isExporting: boolean;
   isCancelling: boolean;
   turnstileSiteKey?: string;
   onTurnstileToken: (token: string | null) => void;
+  onDismissExportDialog: () => void;
 };
 
 export function RevealPreview({
@@ -67,10 +70,12 @@ export function RevealPreview({
   onExportVideo,
   onCancelExport,
   exportStatus,
+  exportDialog,
   isExporting,
   isCancelling,
   turnstileSiteKey,
   onTurnstileToken,
+  onDismissExportDialog,
 }: RevealPreviewProps) {
   const [exportVerifyOpen, setExportVerifyOpen] = useState(false);
   const [dialogTurnstileKey, setDialogTurnstileKey] = useState(0);
@@ -315,6 +320,18 @@ export function RevealPreview({
           siteKey={turnstileSiteKey}
           widgetKey={dialogTurnstileKey}
           onVerified={handleTurnstileVerified}
+        />
+      ) : null}
+      {exportDialog ? (
+        <ExportMessageDialog
+          open
+          title={exportDialog.title}
+          message={exportDialog.message}
+          onOpenChange={(open) => {
+            if (!open) {
+              onDismissExportDialog();
+            }
+          }}
         />
       ) : null}
     </div>
