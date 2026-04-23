@@ -213,6 +213,7 @@ export async function POST(request: Request) {
   let queueWaitSeconds: number | undefined;
   let removeAbortListener: (() => void) | undefined;
   let quotaConsumedIp: string | undefined;
+  let quotaConsumedDate: string | undefined;
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   const routeLogger = logger.child({
@@ -340,6 +341,7 @@ export async function POST(request: Request) {
       }
 
       quotaConsumedIp = clientIp;
+      quotaConsumedDate = quotaStatus.quotaDate;
       routeLogger.info({
         event: "quota.allowed",
         clientIp,
@@ -430,7 +432,9 @@ export async function POST(request: Request) {
           : {}),
       });
       if (quotaConsumedIp) {
-        await releaseExportQuota(quotaConsumedIp).catch(() => {});
+        await releaseExportQuota(quotaConsumedIp, quotaConsumedDate!).catch(
+          () => {},
+        );
         quotaConsumedIp = undefined;
       }
       return NextResponse.json({ error: errorMsg }, { status: 500 });
@@ -490,6 +494,13 @@ export async function POST(request: Request) {
     }
 
     if (statusCode === 499) {
+      if (quotaConsumedIp && !hasSlot) {
+        await releaseExportQuota(quotaConsumedIp, quotaConsumedDate!).catch(
+          () => {},
+        );
+        quotaConsumedIp = undefined;
+      }
+
       routeLogger.info({
         event: "render.cancelled",
         phase: hasSlot ? "active" : "queued",
@@ -504,7 +515,9 @@ export async function POST(request: Request) {
     }
 
     if (quotaConsumedIp) {
-      await releaseExportQuota(quotaConsumedIp).catch(() => {});
+      await releaseExportQuota(quotaConsumedIp, quotaConsumedDate!).catch(
+        () => {},
+      );
       quotaConsumedIp = undefined;
     }
 

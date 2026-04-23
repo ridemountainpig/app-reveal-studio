@@ -128,14 +128,16 @@ export async function consumeDailyExportQuota(
   };
 }
 
-export async function releaseExportQuota(ip: string): Promise<void> {
-  const { enabled, timeZone } = getExportQuotaConfig();
+export async function releaseExportQuota(
+  ip: string,
+  quotaDate: string,
+): Promise<void> {
+  const { enabled } = getExportQuotaConfig();
   if (!enabled) {
     return;
   }
 
   const redis = getRedisClient();
-  const quotaDate = getQuotaDateKey(new Date(), timeZone);
   const key = getQuotaKey(ip, quotaDate);
 
   await redis.eval(
