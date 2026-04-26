@@ -9,6 +9,67 @@ import { exportMessages, formatExportQueueStatus } from "../utils/styles";
 const SUCCESS_RESET_MS = 2400;
 const EXPORT_QUEUE_POLL_MS = 5000;
 
+type ExportDialogState = {
+  title: string;
+  message: string;
+};
+
+class ExportRequestError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "ExportRequestError";
+    this.status = status;
+  }
+}
+
+function getExportDialogState(error: unknown): ExportDialogState {
+  const message =
+    error instanceof Error ? error.message : exportMessages.failed;
+  const status = error instanceof ExportRequestError ? error.status : undefined;
+
+  if (message === "Complete verification first." || status === 403) {
+    return {
+      title: "Verification Required",
+      message,
+    };
+  }
+
+  if (status === 429 || message.startsWith("Daily export limit reached")) {
+    return {
+      title: "Daily Limit Reached",
+      message,
+    };
+  }
+
+  if (status === 413 || message.startsWith("Images are too large")) {
+    return {
+      title: "Export Payload Too Large",
+      message,
+    };
+  }
+
+  if (status === 504 || message.startsWith("Video generation timed out")) {
+    return {
+      title: "Export Timed Out",
+      message,
+    };
+  }
+
+  if (status === 502 || message.startsWith("Failed to load render page")) {
+    return {
+      title: "Render Failed",
+      message,
+    };
+  }
+
+  return {
+    title: "Export Failed",
+    message,
+  };
+}
+
 type UseExportVideoOptions =
   | {
       payload: ExportPayload;
@@ -38,6 +99,13 @@ export function useExportVideo({
   const [isExporting, setIsExporting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
+  const [exportDialog, setExportDialog] = useState<ExportDialogState | null>(
+    null,
+  );
+
+  const dismissExportDialog = useCallback(() => {
+    setExportDialog(null);
+  }, []);
 
   const cancelExport = useCallback(() => {
     const controller = exportAbortControllerRef.current;
@@ -68,8 +136,10 @@ export function useExportVideo({
     if (turnstileRequired) {
       const token = getTurnstileToken?.() ?? null;
       if (!token || !String(token).trim()) {
-        setExportStatus("Complete verification first.");
-        setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
+        setExportDialog({
+          title: "Verification Required",
+          message: "Complete verification first.",
+        });
         return;
       }
     }
@@ -78,6 +148,7 @@ export function useExportVideo({
     const exportController = new AbortController();
     exportAbortControllerRef.current = exportController;
 
+    setExportDialog(null);
     setIsExporting(true);
     setIsCancelling(false);
     setExportStatus(exportMessages.rendering);
@@ -187,7 +258,7 @@ export function useExportVideo({
           } catch {
             // use raw text
           }
-          throw new Error(message);
+          throw new ExportRequestError(message, response.status);
         }
 
         setExportStatus(exportMessages.downloading);
@@ -219,10 +290,8 @@ export function useExportVideo({
         return;
       }
 
-      setExportStatus(
-        error instanceof Error ? error.message : exportMessages.failed,
-      );
-      setTimeout(() => setExportStatus(""), SUCCESS_RESET_MS);
+      setExportStatus("");
+      setExportDialog(getExportDialogState(error));
     } finally {
       if (turnstileRequired && onExportSettled) {
         onExportSettled();
@@ -246,7 +315,9 @@ export function useExportVideo({
     isExporting,
     isCancelling,
     exportStatus,
+    exportDialog,
     exportVideo,
     cancelExport,
+    dismissExportDialog,
   };
 }

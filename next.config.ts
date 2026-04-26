@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["puppeteer"],
+  serverExternalPackages: ["ioredis", "puppeteer"],
 };
 
 export default nextConfig;

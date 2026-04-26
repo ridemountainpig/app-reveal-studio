@@ -29,12 +29,28 @@ export async function verifyTurnstileToken(params: {
 }
 
 export function getClientIpFromRequest(request: Request): string | undefined {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
+  const headerCandidates = [
+    "cf-connecting-ip",
+    "fly-client-ip",
+    "x-real-ip",
+    "x-forwarded-for",
+  ];
+
+  for (const header of headerCandidates) {
+    const value = request.headers.get(header);
+    if (!value) {
+      continue;
+    }
+
+    const first = value.split(",")[0]?.trim();
     if (first) {
       return first;
     }
   }
-  return request.headers.get("x-real-ip") ?? undefined;
+
+  if (process.env.NODE_ENV !== "production") {
+    return "127.0.0.1";
+  }
+
+  return undefined;
 }
