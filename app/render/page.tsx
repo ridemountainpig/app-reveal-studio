@@ -18,6 +18,10 @@ declare global {
     __EXPORT_DONE__?: boolean;
     __EXPORT_RESULT_BASE64__?: string;
     __EXPORT_ERROR__?: string;
+    __CAPTURE_DONE__?: boolean;
+    __CAPTURE_FRAMES__?: string[];
+    __CAPTURE_ERROR__?: string;
+    __ENCODE_INPUT__?: { frames: string[] };
   }
 }
 
@@ -55,6 +59,44 @@ export default function RenderPage() {
 
 function RenderPageInner() {
   const searchParams = useSearchParams();
+  const renderMode = searchParams.get("renderMode");
+
+  if (renderMode === "encodeFrames") {
+    return <EncodeFramesInner />;
+  }
+
+  return <CaptureInner />;
+}
+
+function EncodeFramesInner() {
+  useEffect(() => {
+    const input = window.__ENCODE_INPUT__;
+
+    if (!input?.frames?.length) {
+      window.__EXPORT_ERROR__ = "Encode input not found.";
+      window.__EXPORT_DONE__ = true;
+      return;
+    }
+
+    void (async () => {
+      try {
+        const { encodeFromJpegFrames } = await import("../../lib/exportVideo");
+        const buffer = await encodeFromJpegFrames(input.frames);
+        window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
+        window.__EXPORT_DONE__ = true;
+      } catch (err) {
+        window.__EXPORT_ERROR__ =
+          err instanceof Error ? err.message : "Encode failed.";
+        window.__EXPORT_DONE__ = true;
+      }
+    })();
+  }, []);
+
+  return null;
+}
+
+function CaptureInner() {
+  const searchParams = useSearchParams();
   const captureRef = useRef<HTMLDivElement | null>(null);
   const hasStarted = useRef(false);
   const timelineRef = useRef<{ set: (value: number) => void } | null>(null);
@@ -64,9 +106,11 @@ function RenderPageInner() {
   );
 
   useEffect(() => {
-    const isExportMode = searchParams.get("renderMode") === "export";
+    const renderMode = searchParams.get("renderMode");
+    const isCapture =
+      renderMode === "export" || renderMode === "captureSegment";
 
-    if (!isExportMode) {
+    if (!isCapture) {
       setRenderControls(
         readRenderControls((key) => searchParams.get(key) ?? undefined),
       );
@@ -87,9 +131,15 @@ function RenderPageInner() {
       window.sessionStorage.removeItem(EXPORT_PAYLOAD_STORAGE_KEY);
       setIsReady(true);
     } catch (error) {
-      window.__EXPORT_ERROR__ =
+      const msg =
         error instanceof Error ? error.message : "Invalid export payload.";
-      window.__EXPORT_DONE__ = true;
+      if (renderMode === "captureSegment") {
+        window.__CAPTURE_ERROR__ = msg;
+        window.__CAPTURE_DONE__ = true;
+      } else {
+        window.__EXPORT_ERROR__ = msg;
+        window.__EXPORT_DONE__ = true;
+      }
     }
   }, [searchParams]);
 
@@ -116,28 +166,61 @@ function RenderPageInner() {
     if (hasStarted.current) return;
     hasStarted.current = true;
 
+    const renderMode = searchParams.get("renderMode");
+
     const timer = setTimeout(async () => {
       const node = captureRef.current;
       if (!node) {
-        window.__EXPORT_ERROR__ = "Capture node not found.";
-        window.__EXPORT_DONE__ = true;
+        const msg = "Capture node not found.";
+        if (renderMode === "captureSegment") {
+          window.__CAPTURE_ERROR__ = msg;
+          window.__CAPTURE_DONE__ = true;
+        } else {
+          window.__EXPORT_ERROR__ = msg;
+          window.__EXPORT_DONE__ = true;
+        }
         return;
       }
 
       try {
         const timelineControl = timelineRef.current;
-        const buffer = await generateVideo(node, durationMs, timelineControl);
-        window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
-        window.__EXPORT_DONE__ = true;
+
+        if (renderMode === "captureSegment") {
+          const frameStart = Number(searchParams.get("frameStart") ?? "0");
+          const frameEnd = Number(searchParams.get("frameEnd") ?? "0");
+          const frameTotal = Number(
+            searchParams.get("frameTotal") ?? String(frameEnd + 1),
+          );
+
+          const { captureFrameSegment } = await import("../../lib/exportVideo");
+          const frames = await captureFrameSegment(
+            node,
+            timelineControl,
+            frameStart,
+            frameEnd,
+            frameTotal,
+          );
+          window.__CAPTURE_FRAMES__ = frames;
+          window.__CAPTURE_DONE__ = true;
+        } else {
+          const buffer = await generateVideo(node, durationMs, timelineControl);
+          window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
+          window.__EXPORT_DONE__ = true;
+        }
       } catch (err) {
-        window.__EXPORT_ERROR__ =
-          err instanceof Error ? err.message : "Export failed.";
-        window.__EXPORT_DONE__ = true;
+        const msg = err instanceof Error ? err.message : "Export failed.";
+        if (renderMode === "captureSegment") {
+          window.__CAPTURE_ERROR__ = msg;
+          window.__CAPTURE_DONE__ = true;
+        } else {
+          window.__EXPORT_ERROR__ = msg;
+          window.__EXPORT_DONE__ = true;
+        }
       }
     }, EXPORT_SETTINGS.EXPORT_START_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [durationMs, isReady]);
+  }, [durationMs, isReady, searchParams]);
 
   return (
     <div
