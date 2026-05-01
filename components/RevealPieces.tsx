@@ -20,11 +20,6 @@ import type {
 } from "../types/reveal";
 import type { BadgeVariant } from "../types/revealControls";
 
-interface RevealHeaderProps {
-  title: string;
-  subtitle: string;
-}
-
 type RevealTitleProps = {
   title: string;
 };
@@ -59,15 +54,6 @@ export function RevealSubtitle({ subtitle }: RevealSubtitleProps) {
     <p className="m-0 max-w-none text-center text-[clamp(0.95rem,2.8vw,1.3rem)] font-semibold tracking-[-0.02em] whitespace-nowrap text-[rgba(227,230,235,0.8)]">
       {subtitle}
     </p>
-  );
-}
-
-export function RevealHeader({ title, subtitle }: RevealHeaderProps) {
-  return (
-    <header className="flex flex-col items-center gap-[0.45rem]">
-      <RevealTitle title={title} />
-      <RevealSubtitle subtitle={subtitle} />
-    </header>
   );
 }
 
@@ -118,7 +104,7 @@ export function RevealBadge({
               loading="eager"
               decoding="async"
               onError={() => {
-                setFailedPresetSrcs((prev) => new Set([...prev, item.src]));
+                setFailedPresetSrcs((prev) => new Set(prev).add(item.src));
               }}
             />
           ),
@@ -296,10 +282,15 @@ export function RevealIcon({
         coreShadowColor: `rgba(${glowRgb}, 0.4)`,
       };
     }, [glowColor]);
-  const glowOuterPx = 168 * glowSize;
-  const glowCorePx = 24 * glowSize;
-  const auraBlurPx = 120 * glowSize;
-  const auraInsetPct = 30 * glowSize;
+  const { glowOuterPx, glowCorePx, auraBlurPx, auraInsetPct } = useMemo(
+    () => ({
+      glowOuterPx: 168 * glowSize,
+      glowCorePx: 24 * glowSize,
+      auraBlurPx: 120 * glowSize,
+      auraInsetPct: 30 * glowSize,
+    }),
+    [glowSize],
+  );
   const glyphGlowFilter = useMotionTemplate`blur(${glyphGlowBlur}px) brightness(${glyphGlowBrightness}) saturate(1.18) drop-shadow(0 0 ${glowOuterPx}px ${glowShadowColor})`;
   const glyphCoreFilter = useMotionTemplate`brightness(${glyphCoreBrightness}) saturate(1.04) drop-shadow(0 0 ${glowCorePx}px ${coreShadowColor}) drop-shadow(0 10px 14px rgba(0, 0, 0, 0.2))`;
 

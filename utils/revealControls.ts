@@ -25,20 +25,10 @@ function getFiniteNumber(value: unknown, fallback: number) {
 }
 
 export function createDefaultLayerTransforms(): LayerTransforms {
-  return editableLayerIds.reduce<LayerTransforms>(
-    (accumulator, layerId) => {
-      accumulator[layerId] = { ...DEFAULT_LAYER_TRANSFORM };
-      return accumulator;
-    },
-    {
-      title: { ...DEFAULT_LAYER_TRANSFORM },
-      subtitle: { ...DEFAULT_LAYER_TRANSFORM },
-      icon: { ...DEFAULT_LAYER_TRANSFORM },
-      badge: { ...DEFAULT_LAYER_TRANSFORM },
-      badgeAppStore: { ...DEFAULT_LAYER_TRANSFORM },
-      badgeGooglePlay: { ...DEFAULT_LAYER_TRANSFORM },
-    },
-  );
+  return editableLayerIds.reduce<LayerTransforms>((accumulator, layerId) => {
+    accumulator[layerId] = { ...DEFAULT_LAYER_TRANSFORM };
+    return accumulator;
+  }, {} as LayerTransforms);
 }
 
 export function sanitizeLayerTransforms(value: unknown): LayerTransforms {

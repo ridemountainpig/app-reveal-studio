@@ -76,8 +76,9 @@ function getQuotaKey(ip: string, quotaDate: string) {
 
 export async function consumeDailyExportQuota(
   ip: string,
+  config?: ReturnType<typeof getExportQuotaConfig>,
 ): Promise<ExportQuotaStatus> {
-  const { enabled, limit, timeZone } = getExportQuotaConfig();
+  const { enabled, limit, timeZone } = config ?? getExportQuotaConfig();
   const quotaDate = getQuotaDateKey(new Date(), timeZone);
 
   if (!enabled) {
@@ -131,8 +132,9 @@ export async function consumeDailyExportQuota(
 export async function releaseExportQuota(
   ip: string,
   quotaDate: string,
+  config?: ReturnType<typeof getExportQuotaConfig>,
 ): Promise<void> {
-  const { enabled } = getExportQuotaConfig();
+  const { enabled } = config ?? getExportQuotaConfig();
   if (!enabled) {
     return;
   }

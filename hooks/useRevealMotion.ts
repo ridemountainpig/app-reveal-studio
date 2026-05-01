@@ -46,29 +46,31 @@ export function useAnimationValues(
   prefersReducedMotion: boolean,
   playbackRate: number,
 ) {
-  const toScaledValue = (value: number) => clamp(value * playbackRate, 0, 1);
-
-  const revealProgress = useTransform(timeline, (value: number) =>
-    prefersReducedMotion ? 1 : getSegmentProgress(toScaledValue(value)),
+  const scaledTimeline = useTransform(timeline, (value: number) =>
+    clamp(value * playbackRate, 0, 1),
   );
-  const delayedReveal = useTransform(timeline, (value: number) => {
-    if (prefersReducedMotion) return 1;
-    const scaledValue = toScaledValue(value);
-    return getSegmentProgress(clamp((scaledValue - 0.05) / 0.95, 0, 1));
-  });
+
+  const revealProgress = useTransform(scaledTimeline, (value: number) =>
+    prefersReducedMotion ? 1 : getSegmentProgress(value),
+  );
+  const delayedReveal = useTransform(scaledTimeline, (value: number) =>
+    prefersReducedMotion
+      ? 1
+      : getSegmentProgress(clamp((value - 0.05) / 0.95, 0, 1)),
+  );
   const bloomProgress = useTransform(revealProgress, (value: number) =>
     prefersReducedMotion ? 1 : clamp((value - 0.68) / 0.32, 0, 1),
   );
-  const iconRevealProgress = useTransform(timeline, (value: number) => {
-    if (prefersReducedMotion) return 1;
-    const scaledValue = toScaledValue(value);
-    return getSegmentProgress(clamp((scaledValue - 0.16) / 0.84, 0, 1));
-  });
-  const iconDelayedReveal = useTransform(timeline, (value: number) => {
-    if (prefersReducedMotion) return 1;
-    const scaledValue = toScaledValue(value);
-    return getSegmentProgress(clamp((scaledValue - 0.2) / 0.8, 0, 1));
-  });
+  const iconRevealProgress = useTransform(scaledTimeline, (value: number) =>
+    prefersReducedMotion
+      ? 1
+      : getSegmentProgress(clamp((value - 0.16) / 0.84, 0, 1)),
+  );
+  const iconDelayedReveal = useTransform(scaledTimeline, (value: number) =>
+    prefersReducedMotion
+      ? 1
+      : getSegmentProgress(clamp((value - 0.2) / 0.8, 0, 1)),
+  );
 
   return {
     revealProgress,

@@ -4,7 +4,24 @@ import type {
   RevealControls,
 } from "../types/revealControls";
 
-export type ExportPayload = Record<string, string>;
+export type ExportPayload = Record<
+  | "title"
+  | "subtitle"
+  | "badgeVariant"
+  | "ctaLabel"
+  | "badgePrefix"
+  | "iconUrl"
+  | "badgeIconUrl"
+  | "iconCornerRadius"
+  | "durationMs"
+  | "playbackRate"
+  | "glowColor"
+  | "glowSize"
+  | "rimColor"
+  | "grayColor"
+  | "layerTransforms",
+  string
+>;
 
 type ExportPayloadControls = Pick<
   RevealControls,
@@ -36,7 +53,7 @@ export function appendClientIdToPayloadJson(
   clientId: string,
   options?: { turnstileToken?: string },
 ): string {
-  if (serializedPayload.length <= 1) {
+  if (serializedPayload.length <= 1 || !serializedPayload.startsWith("{")) {
     const base: Record<string, string> = { clientId };
     if (options?.turnstileToken) {
       base.turnstileToken = options.turnstileToken;

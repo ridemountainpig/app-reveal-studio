@@ -79,10 +79,17 @@ export const buildMaskImage = (progress: number) => {
   ].join(" ");
 };
 
-export const buildSurfaceSweep = (progress: number, grayColor: RgbColor) => {
+export const buildSurfaceSweep = (
+  progress: number,
+  grayColor: RgbColor,
+  precomputedGrays?: { brightGray: RgbColor; deepGray: RgbColor },
+) => {
   const phase = clamp(progress, 0, 1);
-  const brightGray = blendRgb(grayColor, WHITE_RGB, 0.24);
-  const deepGray = blendRgb(grayColor, { r: 0, g: 0, b: 0 }, 0.14);
+  const brightGray =
+    precomputedGrays?.brightGray ?? blendRgb(grayColor, WHITE_RGB, 0.24);
+  const deepGray =
+    precomputedGrays?.deepGray ??
+    blendRgb(grayColor, { r: 0, g: 0, b: 0 }, 0.14);
   const leadingRadius = mix(4, 68, phase);
   const leadingFadeStop = leadingRadius + 14;
   const leadingAlpha = mix(0.05, 0.24, phase);

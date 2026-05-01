@@ -97,6 +97,7 @@ function EncodeFramesInner() {
 
 function CaptureInner() {
   const searchParams = useSearchParams();
+  const renderMode = searchParams.get("renderMode");
   const captureRef = useRef<HTMLDivElement | null>(null);
   const hasStarted = useRef(false);
   const timelineRef = useRef<{ set: (value: number) => void } | null>(null);
@@ -106,7 +107,6 @@ function CaptureInner() {
   );
 
   useEffect(() => {
-    const renderMode = searchParams.get("renderMode");
     const isCapture =
       renderMode === "export" || renderMode === "captureSegment";
 
@@ -141,7 +141,7 @@ function CaptureInner() {
         window.__EXPORT_DONE__ = true;
       }
     }
-  }, [searchParams]);
+  }, [renderMode, searchParams]);
 
   const {
     title,
@@ -165,8 +165,6 @@ function CaptureInner() {
     if (!isReady) return;
     if (hasStarted.current) return;
     hasStarted.current = true;
-
-    const renderMode = searchParams.get("renderMode");
 
     const timer = setTimeout(async () => {
       const node = captureRef.current;
@@ -220,7 +218,7 @@ function CaptureInner() {
     }, EXPORT_SETTINGS.EXPORT_START_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [durationMs, isReady, searchParams]);
+  }, [durationMs, isReady, renderMode, searchParams]);
 
   return (
     <div

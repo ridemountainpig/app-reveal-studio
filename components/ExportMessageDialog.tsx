@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 
+import { useDialogBehavior } from "../hooks/useDialogBehavior";
 import { buttonStyles } from "../utils/styles";
 
 type ExportMessageDialogProps = {
@@ -22,62 +23,13 @@ export function ExportMessageDialog({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
+  useDialogBehavior(open, handleClose, dialogRef);
+
   useEffect(() => {
     if (open) {
       closeButtonRef.current?.focus();
     }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onOpenChange(false);
-        return;
-      }
-
-      if (e.key === "Tab" && dialogRef.current) {
-        const focusable = Array.from(
-          dialogRef.current.querySelectorAll<HTMLElement>(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((el) => !el.hasAttribute("disabled"));
-
-        if (focusable.length === 0) {
-          e.preventDefault();
-          return;
-        }
-
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onOpenChange, open]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
   }, [open]);
 
   if (!open) {

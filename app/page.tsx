@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { startTransition, useCallback, useRef, useState } from "react";
+import { startTransition, useCallback, useMemo, useRef, useState } from "react";
 import { RevealPreview } from "../components/RevealPreview";
 import { RevealControlsPanel } from "../components/RevealControlsPanel";
 import { useExportVideo } from "../hooks/useExportVideo";
@@ -14,7 +14,6 @@ export default function Home() {
   const [animationReloadKey, setAnimationReloadKey] = useState(0);
   const {
     controls,
-    previewControls,
     iconFileInputKey,
     badgeIconFileInputKey,
     uploadedIconName,
@@ -64,16 +63,29 @@ export default function Home() {
     turnstileTokenRef.current = null;
   }, []);
 
-  const exportPayload = getExportPayload({
-    safeTitle,
-    safeSubtitle,
-    safeBadgeVariant,
-    safeBadgeLabel,
-    safeBadgePrefix,
-    safeIconUrl,
-    safeBadgeIconUrl,
-    previewControls,
-  });
+  const exportPayload = useMemo(
+    () =>
+      getExportPayload({
+        safeTitle,
+        safeSubtitle,
+        safeBadgeVariant,
+        safeBadgeLabel,
+        safeBadgePrefix,
+        safeIconUrl,
+        safeBadgeIconUrl,
+        previewControls: controls,
+      }),
+    [
+      safeTitle,
+      safeSubtitle,
+      safeBadgeVariant,
+      safeBadgeLabel,
+      safeBadgePrefix,
+      safeIconUrl,
+      safeBadgeIconUrl,
+      controls,
+    ],
+  );
 
   const {
     isExporting,
@@ -137,16 +149,16 @@ export default function Home() {
         ctaLabel={safeBadgeLabel}
         badgeVariant={safeBadgeVariant}
         badgePrefix={safeBadgePrefix}
-        iconCornerRadius={previewControls.iconCornerRadius}
-        durationMs={previewControls.durationMs}
-        playbackRate={previewControls.playbackRate}
+        iconCornerRadius={controls.iconCornerRadius}
+        durationMs={controls.durationMs}
+        playbackRate={controls.playbackRate}
         restartToken={animationReloadKey}
         iconUrl={safeIconUrl}
         badgeIconUrl={safeBadgeIconUrl}
-        glowColor={previewControls.glowColor}
-        glowSize={previewControls.glowSize}
-        rimColor={previewControls.rimColor}
-        grayColor={previewControls.grayColor}
+        glowColor={controls.glowColor}
+        glowSize={controls.glowSize}
+        rimColor={controls.rimColor}
+        grayColor={controls.grayColor}
         layerTransforms={safeLayerTransforms}
         previewPadding={previewPadding}
         onLayerTransformChange={updateLayerTransform}

@@ -42,9 +42,10 @@ const BROWSER_TIMEOUT = 480000; // 8 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
 const MAX_CONCURRENT_EXPORTS = 1;
 const BYTES_PER_MB = 1024 * 1024;
-const PARALLEL_CAPTURE_SEGMENTS = process.env.PARALLEL_CAPTURE_SEGMENTS
-  ? Math.max(1, parseInt(process.env.PARALLEL_CAPTURE_SEGMENTS, 10) || 3)
-  : 3;
+const PARALLEL_CAPTURE_SEGMENTS = (() => {
+  const parsed = parseInt(process.env.PARALLEL_CAPTURE_SEGMENTS ?? "", 10);
+  return !isNaN(parsed) && parsed > 0 ? parsed : 3;
+})();
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -81,7 +82,6 @@ function buildSegments(
   return segments;
 }
 
-let sharedBrowserPromise: Promise<Browser> | null = null;
 let activeExportCount = 0;
 type QueueEntry = {
   clientId: string;
@@ -104,23 +104,6 @@ async function launchBrowser(): Promise<Browser> {
       "--hide-scrollbars",
     ],
   });
-}
-
-async function getSharedBrowser(): Promise<Browser> {
-  if (!sharedBrowserPromise) {
-    sharedBrowserPromise = launchBrowser()
-      .then((browser) => {
-        browser.on("disconnected", () => {
-          sharedBrowserPromise = null;
-        });
-        return browser;
-      })
-      .catch((error) => {
-        sharedBrowserPromise = null;
-        throw error;
-      });
-  }
-  return sharedBrowserPromise;
 }
 
 async function acquireExportSlot(clientId: string, signal?: AbortSignal) {
@@ -239,11 +222,11 @@ async function runEncodeFrames(
   onPageError: (err: unknown) => void,
 ): Promise<string> {
   throwIfAborted(signal);
-  const browser = await getSharedBrowser();
+  const browser = await launchBrowser();
   const page = await browser.newPage();
   await page.setViewport({ width: 1080, height: 1920 });
   page.on("pageerror", onPageError);
-  const onAbort = () => void page.close().catch(() => {});
+  const onAbort = () => void browser.close().catch(() => {});
   signal.addEventListener("abort", onAbort, { once: true });
 
   try {
@@ -283,7 +266,7 @@ async function runEncodeFrames(
     return videoBase64;
   } finally {
     signal.removeEventListener("abort", onAbort);
-    await page.close().catch(() => {});
+    await browser.close().catch(() => {});
   }
 }
 
@@ -325,12 +308,12 @@ export async function POST(request: Request) {
   let queueWaitSeconds: number | undefined;
   let quotaConsumedIp: string | undefined;
   let quotaConsumedDate: string | undefined;
+  const quotaConfig = getExportQuotaConfig();
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   const routeLogger = logger.child({ scope: "video-export", requestId });
 
   try {
-    const quotaConfig = getExportQuotaConfig();
     const contentLength = request.headers.get("content-length");
 
     if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
@@ -425,7 +408,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const quotaStatus = await consumeDailyExportQuota(clientIp);
+      const quotaStatus = await consumeDailyExportQuota(clientIp, quotaConfig);
       if (!quotaStatus.allowed) {
         routeLogger.warn({
           event: "quota.blocked",
@@ -603,10 +586,17 @@ export async function POST(request: Request) {
     }
 
     if (statusCode === 499) {
-      if (quotaConsumedIp && !hasSlot) {
-        await releaseExportQuota(quotaConsumedIp, quotaConsumedDate!).catch(
-          () => {},
-        );
+      if (quotaConsumedIp) {
+        await releaseExportQuota(
+          quotaConsumedIp,
+          quotaConsumedDate!,
+          quotaConfig,
+        ).catch((err) => {
+          routeLogger.warn({
+            event: "quota.release_failed",
+            error: serializeError(err),
+          });
+        });
         quotaConsumedIp = undefined;
       }
 
@@ -624,9 +614,16 @@ export async function POST(request: Request) {
     }
 
     if (quotaConsumedIp) {
-      await releaseExportQuota(quotaConsumedIp, quotaConsumedDate!).catch(
-        () => {},
-      );
+      await releaseExportQuota(
+        quotaConsumedIp,
+        quotaConsumedDate!,
+        quotaConfig,
+      ).catch((err) => {
+        routeLogger.warn({
+          event: "quota.release_failed",
+          error: serializeError(err),
+        });
+      });
       quotaConsumedIp = undefined;
     }
 

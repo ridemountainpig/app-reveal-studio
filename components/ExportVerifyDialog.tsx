@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useId } from "react";
+import { useCallback, useId } from "react";
 import { ExportTurnstile } from "./ExportTurnstile";
+import { useDialogBehavior } from "../hooks/useDialogBehavior";
 import { buttonStyles } from "../utils/styles";
 
 type ExportVerifyDialogProps = {
@@ -22,29 +23,8 @@ export function ExportVerifyDialog({
 }: ExportVerifyDialogProps) {
   const titleId = useId();
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onOpenChange(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onOpenChange]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+  const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
+  useDialogBehavior(open, handleClose);
 
   if (!open) {
     return null;
