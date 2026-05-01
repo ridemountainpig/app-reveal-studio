@@ -523,7 +523,7 @@ export async function POST(request: Request) {
 
     throwIfAborted(request.signal);
 
-    // Phase 2: encode — shared browser
+    // Phase 2: encode — runEncodeFrames manages its own browser lifecycle
     const encodeStartedAt = Date.now();
     const videoBase64 = await runEncodeFrames(
       renderBaseUrl,
