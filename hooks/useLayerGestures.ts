@@ -98,7 +98,7 @@ export function useLayerGestures({
     if (el && live) {
       el.style.transform = live;
     }
-  }, [gesturingLayerId]);
+  });
 
   useEffect(() => {
     return () => {
