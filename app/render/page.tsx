@@ -82,9 +82,11 @@ function EncodeFramesInner() {
       try {
         const { encodeFromJpegFrames } = await import("../../lib/exportVideo");
         const buffer = await encodeFromJpegFrames(input.frames);
+        window.__ENCODE_INPUT__ = undefined;
         window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
         window.__EXPORT_DONE__ = true;
       } catch (err) {
+        window.__ENCODE_INPUT__ = undefined;
         window.__EXPORT_ERROR__ =
           err instanceof Error ? err.message : "Encode failed.";
         window.__EXPORT_DONE__ = true;

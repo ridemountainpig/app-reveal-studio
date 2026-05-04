@@ -1,3 +1,5 @@
+import type { ChildProcess } from "node:child_process";
+
 import { NextResponse } from "next/server";
 import type { Browser } from "puppeteer";
 
@@ -39,12 +41,19 @@ const ALLOWED_PARAMS = [
 
 const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
 const BROWSER_TIMEOUT = 480000; // 8 minutes
+const BROWSER_LAUNCH_TIMEOUT = 60000; // 1 minute
+const BROWSER_CLOSE_TIMEOUT = 10000; // 10 seconds
+const BROWSER_IO_TIMEOUT = 120000; // 2 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
 const MAX_CONCURRENT_EXPORTS = 1;
 const BYTES_PER_MB = 1024 * 1024;
 const PARALLEL_CAPTURE_SEGMENTS = (() => {
   const parsed = parseInt(process.env.PARALLEL_CAPTURE_SEGMENTS ?? "", 10);
   return !isNaN(parsed) && parsed > 0 ? parsed : 3;
+})();
+const CAPTURE_BROWSER_CONCURRENCY = (() => {
+  const parsed = parseInt(process.env.CAPTURE_BROWSER_CONCURRENCY ?? "", 10);
+  return !isNaN(parsed) && parsed > 0 ? parsed : 1;
 })();
 
 const UUID_REGEX =
@@ -82,6 +91,23 @@ function buildSegments(
   return segments;
 }
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 let activeExportCount = 0;
 type QueueEntry = {
   clientId: string;
@@ -93,7 +119,7 @@ const activeExportClientIds = new Set<string>();
 
 async function launchBrowser(): Promise<Browser> {
   const puppeteer = await import("puppeteer");
-  return puppeteer.default.launch({
+  const launchPromise = puppeteer.default.launch({
     headless: true,
     args: [
       "--disable-web-security",
@@ -104,6 +130,45 @@ async function launchBrowser(): Promise<Browser> {
       "--hide-scrollbars",
     ],
   });
+
+  try {
+    return await withTimeout(
+      launchPromise,
+      BROWSER_LAUNCH_TIMEOUT,
+      "Browser launch timed out.",
+    );
+  } catch (err) {
+    launchPromise.then((browser) => closeBrowser(browser)).catch(() => {});
+    throw err;
+  }
+}
+
+function getBrowserProcess(browser: Browser): ChildProcess | undefined {
+  const maybeBrowserWithProcess = browser as Browser & {
+    process?: () => ChildProcess | null;
+  };
+  return maybeBrowserWithProcess.process?.() ?? undefined;
+}
+
+async function closeBrowser(browser: Browser) {
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  const closePromise = browser
+    .close()
+    .then(() => "closed" as const)
+    .catch(() => "failed" as const);
+  const closeTimeout = new Promise<"timeout">((resolve) => {
+    closeTimer = setTimeout(() => resolve("timeout"), BROWSER_CLOSE_TIMEOUT);
+  });
+
+  try {
+    const result = await Promise.race([closePromise, closeTimeout]);
+
+    if (result !== "closed") {
+      getBrowserProcess(browser)?.kill("SIGKILL");
+    }
+  } finally {
+    if (closeTimer) clearTimeout(closeTimer);
+  }
 }
 
 async function acquireExportSlot(clientId: string, signal?: AbortSignal) {
@@ -165,19 +230,27 @@ async function runCaptureSegment(
 ): Promise<string[]> {
   throwIfAborted(signal);
   const browser = await launchBrowser();
-  const onAbort = () => void browser.close().catch(() => {});
+  const onAbort = () => void closeBrowser(browser).catch(() => {});
   signal.addEventListener("abort", onAbort, { once: true });
 
   try {
-    const page = await browser.newPage();
+    const page = await withTimeout(
+      browser.newPage(),
+      BROWSER_IO_TIMEOUT,
+      "Browser page creation timed out.",
+    );
     await page.setViewport({ width: 1080, height: 1920 });
     page.on("pageerror", onPageError);
 
-    await page.evaluateOnNewDocument(
-      ({ storageKey, payload }) => {
-        window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
-      },
-      { storageKey: EXPORT_PAYLOAD_STORAGE_KEY, payload: exportPayload },
+    await withTimeout(
+      page.evaluateOnNewDocument(
+        ({ storageKey, payload }) => {
+          window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
+        },
+        { storageKey: EXPORT_PAYLOAD_STORAGE_KEY, payload: exportPayload },
+      ),
+      BROWSER_IO_TIMEOUT,
+      "Capture payload transfer timed out.",
     );
 
     const captureUrl =
@@ -201,17 +274,28 @@ async function runCaptureSegment(
     );
     if (errorMsg) throw new Error(errorMsg);
 
-    const frames = await page.evaluate(
-      () =>
-        (window as unknown as { __CAPTURE_FRAMES__?: string[] })
-          .__CAPTURE_FRAMES__,
+    const frames = await withTimeout(
+      page.evaluate(
+        () =>
+          (window as unknown as { __CAPTURE_FRAMES__?: string[] })
+            .__CAPTURE_FRAMES__,
+      ),
+      BROWSER_IO_TIMEOUT,
+      "Capture frame transfer timed out.",
     );
     if (!frames?.length) throw new Error("Capture segment returned no frames.");
+    await page
+      .evaluate(() => {
+        (
+          window as unknown as { __CAPTURE_FRAMES__?: string[] }
+        ).__CAPTURE_FRAMES__ = undefined;
+      })
+      .catch(() => {});
 
     return frames;
   } finally {
     signal.removeEventListener("abort", onAbort);
-    await browser.close().catch(() => {});
+    await closeBrowser(browser).catch(() => {});
   }
 }
 
@@ -223,20 +307,29 @@ async function runEncodeFrames(
 ): Promise<string> {
   throwIfAborted(signal);
   const browser = await launchBrowser();
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1080, height: 1920 });
-  page.on("pageerror", onPageError);
-  const onAbort = () => void browser.close().catch(() => {});
+  const onAbort = () => void closeBrowser(browser).catch(() => {});
   signal.addEventListener("abort", onAbort, { once: true });
 
   try {
-    await page.evaluateOnNewDocument(
-      ({ frames }) => {
-        (
-          window as unknown as { __ENCODE_INPUT__: { frames: string[] } }
-        ).__ENCODE_INPUT__ = { frames };
-      },
-      { frames: allFrames },
+    const page = await withTimeout(
+      browser.newPage(),
+      BROWSER_IO_TIMEOUT,
+      "Browser page creation timed out.",
+    );
+    await page.setViewport({ width: 1080, height: 1920 });
+    page.on("pageerror", onPageError);
+
+    await withTimeout(
+      page.evaluateOnNewDocument(
+        ({ frames }) => {
+          (
+            window as unknown as { __ENCODE_INPUT__: { frames: string[] } }
+          ).__ENCODE_INPUT__ = { frames };
+        },
+        { frames: allFrames },
+      ),
+      BROWSER_IO_TIMEOUT,
+      "Encode frame transfer timed out.",
     );
 
     await page.goto(`${renderBaseUrl}?renderMode=encodeFrames`, {
@@ -256,18 +349,86 @@ async function runEncodeFrames(
     );
     if (errorMsg) throw new Error(errorMsg);
 
-    const videoBase64 = await page.evaluate(
-      () =>
-        (window as unknown as { __EXPORT_RESULT_BASE64__?: string })
-          .__EXPORT_RESULT_BASE64__,
+    const videoBase64 = await withTimeout(
+      page.evaluate(
+        () =>
+          (window as unknown as { __EXPORT_RESULT_BASE64__?: string })
+            .__EXPORT_RESULT_BASE64__,
+      ),
+      BROWSER_IO_TIMEOUT,
+      "Export result transfer timed out.",
     );
     if (!videoBase64) throw new Error("Export result missing.");
+    await page
+      .evaluate(() => {
+        (
+          window as unknown as {
+            __ENCODE_INPUT__?: { frames: string[] };
+            __EXPORT_RESULT_BASE64__?: string;
+          }
+        ).__ENCODE_INPUT__ = undefined;
+        (
+          window as unknown as {
+            __ENCODE_INPUT__?: { frames: string[] };
+            __EXPORT_RESULT_BASE64__?: string;
+          }
+        ).__EXPORT_RESULT_BASE64__ = undefined;
+      })
+      .catch(() => {});
 
     return videoBase64;
   } finally {
     signal.removeEventListener("abort", onAbort);
-    await browser.close().catch(() => {});
+    await closeBrowser(browser).catch(() => {});
   }
+}
+
+async function runCaptureSegments(
+  renderBaseUrl: string,
+  exportPayload: Record<string, string>,
+  segments: { start: number; end: number }[],
+  frameTotal: number,
+  controller: AbortController,
+  onPageError: (err: unknown) => void,
+): Promise<string[]> {
+  const signal = controller.signal;
+  const frameArrays: string[][] = new Array(segments.length);
+  let nextSegmentIndex = 0;
+  const workerCount = Math.min(CAPTURE_BROWSER_CONCURRENCY, segments.length);
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (!signal.aborted) {
+      const segmentIndex = nextSegmentIndex;
+      nextSegmentIndex += 1;
+
+      const segment = segments[segmentIndex];
+      if (!segment) return;
+
+      try {
+        frameArrays[segmentIndex] = await runCaptureSegment(
+          renderBaseUrl,
+          exportPayload,
+          segment,
+          frameTotal,
+          signal,
+          onPageError,
+        );
+      } catch (err) {
+        controller.abort();
+        throw err;
+      }
+    }
+  });
+
+  const results = await Promise.allSettled(workers);
+  const failedCapture = results.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (failedCapture) {
+    throw failedCapture.reason;
+  }
+
+  return frameArrays.flat();
 }
 
 export async function GET(request: Request) {
@@ -470,6 +631,10 @@ export async function POST(request: Request) {
       durationSeconds: msToSeconds(durationMs),
       frameTotal,
       segments: segments.length,
+      captureConcurrency: Math.min(
+        CAPTURE_BROWSER_CONCURRENCY,
+        segments.length,
+      ),
     });
 
     const beforeSlotAcquire = Date.now();
@@ -480,39 +645,38 @@ export async function POST(request: Request) {
 
     throwIfAborted(request.signal);
 
-    // Phase 1: parallel capture — each segment uses its own browser process
+    // Phase 1: segmented capture. Each segment uses its own browser process.
     const captureStartedAt = Date.now();
     const segmentController = new AbortController();
     const onRequestAbort = () => segmentController.abort();
     request.signal.addEventListener("abort", onRequestAbort, { once: true });
 
-    let allFrames: string[];
+    let allFrames: string[] = [];
     try {
-      const frameArrays = await Promise.all(
-        segments.map((seg) =>
-          runCaptureSegment(
-            renderBaseUrl,
-            exportPayload,
-            seg,
-            frameTotal,
-            segmentController.signal,
-            (err) =>
-              routeLogger.error({
-                event: "render.pageerror",
-                phase: "capture",
-                error: serializeError(
-                  err instanceof Error ? err : new Error(String(err)),
-                ),
-              }),
-          ),
-        ),
+      allFrames = await runCaptureSegments(
+        renderBaseUrl,
+        exportPayload,
+        segments,
+        frameTotal,
+        segmentController,
+        (err) =>
+          routeLogger.error({
+            event: "render.pageerror",
+            phase: "capture",
+            error: serializeError(
+              err instanceof Error ? err : new Error(String(err)),
+            ),
+          }),
       );
-      allFrames = frameArrays.flat();
     } catch (err) {
       segmentController.abort();
       throw err;
     } finally {
       request.signal.removeEventListener("abort", onRequestAbort);
+    }
+
+    if (!allFrames.length) {
+      throw new Error("Capture returned no frames.");
     }
 
     routeLogger.info({
@@ -538,6 +702,7 @@ export async function POST(request: Request) {
           ),
         }),
     );
+    allFrames.length = 0;
 
     routeLogger.info({
       event: "render.encode_done",
@@ -576,7 +741,7 @@ export async function POST(request: Request) {
     if (wasAborted) {
       statusCode = 499;
       errorMessage = "Export request cancelled.";
-    } else if (message.includes("Timeout")) {
+    } else if (message.includes("Timeout") || message.includes("timed out")) {
       statusCode = 504;
       errorMessage =
         "Video generation timed out. Please try with shorter duration.";

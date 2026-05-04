@@ -164,6 +164,8 @@ export async function generateVideo(
     ctx.fillStyle = EXPORT_SETTINGS.BACKGROUND;
     ctx.fillRect(0, 0, EXPORT_SETTINGS.WIDTH, EXPORT_SETTINGS.HEIGHT);
     ctx.drawImage(frameCanvas, offsetX, offsetY, drawW, drawH);
+    frameCanvas.width = 0;
+    frameCanvas.height = 0;
 
     if (encError) throw encError;
     const vf = new VideoFrame(exportCanvas, {
@@ -259,6 +261,8 @@ export async function captureFrameSegment(
     ctx.drawImage(frameCanvas, offsetX, offsetY, drawW, drawH);
 
     jpegFrames.push(compositeCanvas.toDataURL("image/jpeg", 0.9));
+    frameCanvas.width = 0;
+    frameCanvas.height = 0;
   }
 
   return jpegFrames;
@@ -328,6 +332,7 @@ export async function encodeFromJpegFrames(
     });
 
     ctx.drawImage(img, 0, 0, EXPORT_SETTINGS.WIDTH, EXPORT_SETTINGS.HEIGHT);
+    img.src = "";
 
     if (encError) throw encError;
 
