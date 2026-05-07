@@ -186,11 +186,22 @@ function CaptureInner() {
         const timelineControl = timelineRef.current;
 
         if (renderMode === "captureSegment") {
-          const frameStart = Number(searchParams.get("frameStart") ?? "0");
-          const frameEnd = Number(searchParams.get("frameEnd") ?? "0");
-          const frameTotal = Number(
-            searchParams.get("frameTotal") ?? String(frameEnd + 1),
-          );
+          const frameStart = Number(searchParams.get("frameStart"));
+          const frameEnd = Number(searchParams.get("frameEnd"));
+          const frameTotal = Number(searchParams.get("frameTotal"));
+
+          if (
+            !Number.isInteger(frameStart) ||
+            !Number.isInteger(frameEnd) ||
+            !Number.isInteger(frameTotal) ||
+            frameStart < 0 ||
+            frameEnd < frameStart ||
+            frameTotal < frameEnd + 1
+          ) {
+            throw new Error(
+              `Invalid capture segment params: frameStart=${searchParams.get("frameStart")}, frameEnd=${searchParams.get("frameEnd")}, frameTotal=${searchParams.get("frameTotal")}`,
+            );
+          }
 
           const { captureFrameSegment } = await import("../../lib/exportVideo");
           const frames = await captureFrameSegment(
