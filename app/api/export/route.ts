@@ -606,17 +606,15 @@ export async function POST(request: Request) {
     }
 
     const renderBaseUrl = (() => {
-      const base =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        (() => {
-          const host =
-            request.headers.get("x-forwarded-host") ??
-            request.headers.get("host") ??
-            "localhost:3000";
-          const proto = request.headers.get("x-forwarded-proto") ?? "http";
-          return `${proto}://${host}`;
-        })();
-      return `${base}/render`;
+      if (process.env.NEXT_PUBLIC_APP_URL) {
+        return `${process.env.NEXT_PUBLIC_APP_URL}/render`;
+      }
+      if (process.env.NODE_ENV !== "development") {
+        throw new Error(
+          "NEXT_PUBLIC_APP_URL must be set in non-development environments.",
+        );
+      }
+      return "http://localhost:3000/render";
     })();
 
     const durationMs = Number(exportPayload.durationMs || "0") || 3000;
