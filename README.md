@@ -15,6 +15,22 @@ Interactive app reveal animation playground built with Next.js, React, TypeScrip
 - Server-side video export using headless Chromium (no Safari compatibility issues)
 - Cancellable export with live queue position
 
+## Demo
+
+- **Open Slide** [🔗](https://github.com/1weiho/open-slide)
+- **Subflow** [🔗](https://github.com/ridemountainpig/subflow)
+
+<table>
+  <tr>
+    <td align="left">
+      <video src="https://github.com/user-attachments/assets/18ab62e3-40c2-426d-86e7-6a69df2800f9" controls width="100%"></video>
+    </td>
+    <td align="left">
+      <video src="https://github.com/user-attachments/assets/a9d3dea7-6175-41b2-91ee-ba27dbebcb5d" controls width="100%"></video>
+    </td>
+  </tr>
+</table>
+
 ## Development
 
 Install dependencies:
