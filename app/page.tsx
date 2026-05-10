@@ -110,6 +110,9 @@ export default function Home() {
 
   return (
     <main className="relative grid min-h-screen place-items-center overflow-x-auto overflow-y-auto bg-black">
+      <h1 className="sr-only">
+        App Reveal Studio — Create App Reveal Videos Online
+      </h1>
       <motion.a
         href="https://yencheng.dev"
         target="_blank"

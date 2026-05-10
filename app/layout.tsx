@@ -1,19 +1,31 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const APP_URL = "https://app-reveal-studio.yencheng.dev";
+
+export const viewport: Viewport = {
+  themeColor: "#000000",
+};
+
 export const metadata: Metadata = {
+  metadataBase: new URL(APP_URL),
   title: "App Reveal Studio",
   description:
     "Create app reveal videos with editable titles, icons, timing, and color controls, then download them to promote your product.",
-  keywords:
-    "app reveal video, app promo video, app showcase animation, product promo video, app reveal generator",
   openGraph: {
     type: "website",
-    url: "https://app-reveal-studio.yencheng.dev/",
+    url: `${APP_URL}/`,
     title: "App Reveal Studio",
     description:
       "Create app reveal videos with editable titles, icons, timing, and color controls, then download them to promote your product.",
-    images: "https://app-reveal-studio.yencheng.dev/og-image.png",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "App Reveal Studio – Create app reveal videos",
+      },
+    ],
     siteName: "App Reveal Studio",
   },
   twitter: {
@@ -21,18 +33,34 @@ export const metadata: Metadata = {
     title: "App Reveal Studio",
     description:
       "Create app reveal videos with editable titles, icons, timing, and color controls, then download them to promote your product.",
-    images: "https://app-reveal-studio.yencheng.dev/og-image.png",
+    images: "/og-image.png",
   },
   icons: {
-    icon: [
-      { url: "/favicon.ico", type: "image/x-icon" },
-      { url: "/favicon.png", type: "image/png" },
-    ],
+    icon: [{ url: "/favicon.png", type: "image/png" }],
     apple: "/favicon.png",
   },
   alternates: {
-    canonical: "https://app-reveal-studio.yencheng.dev/",
+    canonical: `${APP_URL}/`,
   },
+};
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "App Reveal Studio",
+  url: `${APP_URL}/`,
+  description:
+    "Create app reveal videos with editable titles, icons, timing, and color controls, then download them to promote your product.",
+  applicationCategory: "DesignApplication",
+  operatingSystem: "Web",
+  isAccessibleForFree: true,
+  featureList: [
+    "App reveal animation generator",
+    "Customizable titles and icons",
+    "Adjustable timing and color controls",
+    "Video download",
+    "App Store and Google Play badge support",
+  ],
 };
 
 export default function RootLayout({
@@ -42,6 +70,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body className="antialiased">{children}</body>
     </html>
   );

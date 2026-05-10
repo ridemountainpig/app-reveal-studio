@@ -7,10 +7,13 @@ Interactive app reveal animation playground built with Next.js, React, TypeScrip
 - Live preview for app reveal animation
 - Collapsible floating controls panel
 - Editable title, subtitle, badge text, and icon URLs
+- Badge presets for App Store, Google Play, and custom badges
 - Local icon upload (takes priority over icon URL)
+- Drag and pinch to reposition and scale individual layers, with alignment guides
 - Adjustable duration, playback speed, and icon corner radius
 - Color controls for glow, rim, and gray sweep
 - Server-side video export using headless Chromium (no Safari compatibility issues)
+- Cancellable export with live queue position
 
 ## Development
 

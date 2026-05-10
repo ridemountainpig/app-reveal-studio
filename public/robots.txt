@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /render
+
+Sitemap: https://app-reveal-studio.yencheng.dev/sitemap.xml
