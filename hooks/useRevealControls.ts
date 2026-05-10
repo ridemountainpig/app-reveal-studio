@@ -98,7 +98,10 @@ function useDataUrlUpload(errorLabel: string) {
         }
       } catch (error) {
         console.error(`Failed to read ${errorLabel}:`, error);
-        if (abortControllerRef.current === controller) {
+        if (
+          !controller.signal.aborted &&
+          abortControllerRef.current === controller
+        ) {
           setUploadedUrl(null);
         }
       }
@@ -128,7 +131,6 @@ export function useRevealControls() {
     revealControlsReducer,
     initialControls,
   );
-  const previewControls = controls;
   const iconUpload = useDataUrlUpload("icon file");
   const badgeIconUpload = useDataUrlUpload("badge icon file");
 
@@ -168,22 +170,19 @@ export function useRevealControls() {
     [],
   );
 
-  const safeTitle = previewControls.title.trim() || initialControls.title;
-  const safeSubtitle =
-    previewControls.subtitle.trim() || initialControls.subtitle;
+  const safeTitle = controls.title.trim() || initialControls.title;
+  const safeSubtitle = controls.subtitle.trim() || initialControls.subtitle;
   const safeBadgeLabel =
-    previewControls.badgeLabel.trim() || initialControls.badgeLabel;
+    controls.badgeLabel.trim() || initialControls.badgeLabel;
   const safeBadgePrefix =
-    previewControls.badgePrefix.trim() || initialControls.badgePrefix;
+    controls.badgePrefix.trim() || initialControls.badgePrefix;
   const safeIconUrl =
-    iconUpload.uploadedUrl ?? (previewControls.iconUrl.trim() || undefined);
+    iconUpload.uploadedUrl ?? (controls.iconUrl.trim() || undefined);
   const safeBadgeIconUrl =
-    badgeIconUpload.uploadedUrl ??
-    (previewControls.badgeIconUrl.trim() || undefined);
+    badgeIconUpload.uploadedUrl ?? (controls.badgeIconUrl.trim() || undefined);
 
   return {
     controls,
-    previewControls,
     iconFileInputKey: iconUpload.fileInputKey,
     badgeIconFileInputKey: badgeIconUpload.fileInputKey,
     uploadedIconName: iconUpload.uploadedName,
@@ -201,11 +200,11 @@ export function useRevealControls() {
     clearUploadedBadgeIcon: badgeIconUpload.clearUploadedFile,
     safeTitle,
     safeSubtitle,
-    safeBadgeVariant: previewControls.badgeVariant,
+    safeBadgeVariant: controls.badgeVariant,
     safeBadgeLabel,
     safeBadgePrefix,
     safeIconUrl,
     safeBadgeIconUrl,
-    safeLayerTransforms: previewControls.layers,
+    safeLayerTransforms: controls.layers,
   };
 }

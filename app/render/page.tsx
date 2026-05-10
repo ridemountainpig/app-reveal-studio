@@ -18,6 +18,10 @@ declare global {
     __EXPORT_DONE__?: boolean;
     __EXPORT_RESULT_BASE64__?: string;
     __EXPORT_ERROR__?: string;
+    __CAPTURE_DONE__?: boolean;
+    __CAPTURE_FRAMES__?: string[];
+    __CAPTURE_ERROR__?: string;
+    __ENCODE_INPUT__?: { frames: string[]; ready: boolean };
   }
 }
 
@@ -55,6 +59,56 @@ export default function RenderPage() {
 
 function RenderPageInner() {
   const searchParams = useSearchParams();
+  const renderMode = searchParams.get("renderMode");
+
+  if (renderMode === "encodeFrames") {
+    return <EncodeFramesInner />;
+  }
+
+  return <CaptureInner />;
+}
+
+function EncodeFramesInner() {
+  useEffect(() => {
+    void (async () => {
+      try {
+        const input = await waitForEncodeInput();
+        const { encodeFromJpegFrames } = await import("../../lib/exportVideo");
+        const buffer = await encodeFromJpegFrames(input.frames);
+        window.__ENCODE_INPUT__ = undefined;
+        window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
+        window.__EXPORT_DONE__ = true;
+      } catch (err) {
+        window.__ENCODE_INPUT__ = undefined;
+        window.__EXPORT_ERROR__ =
+          err instanceof Error ? err.message : "Encode failed.";
+        window.__EXPORT_DONE__ = true;
+      }
+    })();
+  }, []);
+
+  return null;
+}
+
+const ENCODE_INPUT_WAIT_TIMEOUT_MS = 5 * 60 * 1000;
+const ENCODE_INPUT_POLL_INTERVAL_MS = 100;
+
+async function waitForEncodeInput(): Promise<{ frames: string[] }> {
+  const deadline = Date.now() + ENCODE_INPUT_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const input = window.__ENCODE_INPUT__;
+    if (input?.ready) {
+      if (!input.frames.length) throw new Error("Encode input is empty.");
+      return { frames: input.frames };
+    }
+    await new Promise((r) => setTimeout(r, ENCODE_INPUT_POLL_INTERVAL_MS));
+  }
+  throw new Error("Encode input not received.");
+}
+
+function CaptureInner() {
+  const searchParams = useSearchParams();
+  const renderMode = searchParams.get("renderMode");
   const captureRef = useRef<HTMLDivElement | null>(null);
   const hasStarted = useRef(false);
   const timelineRef = useRef<{ set: (value: number) => void } | null>(null);
@@ -64,9 +118,10 @@ function RenderPageInner() {
   );
 
   useEffect(() => {
-    const isExportMode = searchParams.get("renderMode") === "export";
+    const isCapture =
+      renderMode === "export" || renderMode === "captureSegment";
 
-    if (!isExportMode) {
+    if (!isCapture) {
       setRenderControls(
         readRenderControls((key) => searchParams.get(key) ?? undefined),
       );
@@ -87,11 +142,17 @@ function RenderPageInner() {
       window.sessionStorage.removeItem(EXPORT_PAYLOAD_STORAGE_KEY);
       setIsReady(true);
     } catch (error) {
-      window.__EXPORT_ERROR__ =
+      const msg =
         error instanceof Error ? error.message : "Invalid export payload.";
-      window.__EXPORT_DONE__ = true;
+      if (renderMode === "captureSegment") {
+        window.__CAPTURE_ERROR__ = msg;
+        window.__CAPTURE_DONE__ = true;
+      } else {
+        window.__EXPORT_ERROR__ = msg;
+        window.__EXPORT_DONE__ = true;
+      }
     }
-  }, [searchParams]);
+  }, [renderMode, searchParams]);
 
   const {
     title,
@@ -116,28 +177,74 @@ function RenderPageInner() {
     if (hasStarted.current) return;
     hasStarted.current = true;
 
+    const frameStartRaw = searchParams.get("frameStart");
+    const frameEndRaw = searchParams.get("frameEnd");
+    const frameTotalRaw = searchParams.get("frameTotal");
+
     const timer = setTimeout(async () => {
       const node = captureRef.current;
       if (!node) {
-        window.__EXPORT_ERROR__ = "Capture node not found.";
-        window.__EXPORT_DONE__ = true;
+        const msg = "Capture node not found.";
+        if (renderMode === "captureSegment") {
+          window.__CAPTURE_ERROR__ = msg;
+          window.__CAPTURE_DONE__ = true;
+        } else {
+          window.__EXPORT_ERROR__ = msg;
+          window.__EXPORT_DONE__ = true;
+        }
         return;
       }
 
       try {
         const timelineControl = timelineRef.current;
-        const buffer = await generateVideo(node, durationMs, timelineControl);
-        window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
-        window.__EXPORT_DONE__ = true;
+
+        if (renderMode === "captureSegment") {
+          const frameStart = Number(frameStartRaw);
+          const frameEnd = Number(frameEndRaw);
+          const frameTotal = Number(frameTotalRaw);
+
+          if (
+            !Number.isInteger(frameStart) ||
+            !Number.isInteger(frameEnd) ||
+            !Number.isInteger(frameTotal) ||
+            frameStart < 0 ||
+            frameEnd < frameStart ||
+            frameTotal < frameEnd + 1
+          ) {
+            throw new Error(
+              `Invalid capture segment params: frameStart=${frameStartRaw}, frameEnd=${frameEndRaw}, frameTotal=${frameTotalRaw}`,
+            );
+          }
+
+          const { captureFrameSegment } = await import("../../lib/exportVideo");
+          const frames = await captureFrameSegment(
+            node,
+            timelineControl,
+            frameStart,
+            frameEnd,
+            frameTotal,
+          );
+          window.__CAPTURE_FRAMES__ = frames;
+          window.__CAPTURE_DONE__ = true;
+        } else {
+          const buffer = await generateVideo(node, durationMs, timelineControl);
+          window.__EXPORT_RESULT_BASE64__ = await arrayBufferToBase64(buffer);
+          window.__EXPORT_DONE__ = true;
+        }
       } catch (err) {
-        window.__EXPORT_ERROR__ =
-          err instanceof Error ? err.message : "Export failed.";
-        window.__EXPORT_DONE__ = true;
+        const msg = err instanceof Error ? err.message : "Export failed.";
+        if (renderMode === "captureSegment") {
+          window.__CAPTURE_ERROR__ = msg;
+          window.__CAPTURE_DONE__ = true;
+        } else {
+          window.__EXPORT_ERROR__ = msg;
+          window.__EXPORT_DONE__ = true;
+        }
       }
     }, EXPORT_SETTINGS.EXPORT_START_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [durationMs, isReady]);
+  }, [durationMs, isReady, renderMode, searchParams]);
 
   return (
     <div

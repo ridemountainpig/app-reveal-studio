@@ -96,6 +96,7 @@ export function useExportVideo({
 }: UseExportVideoOptions) {
   const exportAbortControllerRef = useRef<AbortController | null>(null);
   const stopPollingRef = useRef<(() => void) | null>(null);
+  const isExportingRef = useRef(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
@@ -129,7 +130,7 @@ export function useExportVideo({
   }, []);
 
   const exportVideo = useCallback(async () => {
-    if (isExporting) {
+    if (isExportingRef.current) {
       return;
     }
 
@@ -149,6 +150,7 @@ export function useExportVideo({
     exportAbortControllerRef.current = exportController;
 
     setExportDialog(null);
+    isExportingRef.current = true;
     setIsExporting(true);
     setIsCancelling(false);
     setExportStatus(exportMessages.rendering);
@@ -299,13 +301,13 @@ export function useExportVideo({
       if (exportAbortControllerRef.current === exportController) {
         exportAbortControllerRef.current = null;
       }
+      isExportingRef.current = false;
       setIsCancelling(false);
       setIsExporting(false);
     }
   }, [
     filename,
     getTurnstileToken,
-    isExporting,
     onExportSettled,
     payload,
     turnstileRequired,

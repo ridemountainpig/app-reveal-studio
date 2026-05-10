@@ -2,6 +2,7 @@
 
 import { flushSync } from "react-dom";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -149,11 +150,12 @@ export function useLayerGestures({
     nextTransform: LayerTransform,
   ) => {
     const target = layerRefs.current[layerId];
+    const { width, height } = stageSizeRef.current;
     const clampedTransform = clampLayerTransform(
       layerId,
       nextTransform,
-      stageSize.width,
-      stageSize.height,
+      width,
+      height,
       target,
       badgeClampOptions,
     );
@@ -446,23 +448,24 @@ export function useLayerGestures({
     layerRefs.current[layerId] = node;
   };
 
-  const getLayerInteractiveStyle = (
-    layerId: EditableLayerId,
-  ): CSSProperties => {
-    const baseStyle =
-      gesturingLayerId === layerId
-        ? baseTransformOriginStyle
-        : {
-            ...baseTransformOriginStyle,
-            transform: getBaseLayerTransform(
-              stageSize.width,
-              stageSize.height,
-              layerTransforms[layerId],
-            ),
-          };
+  const getLayerInteractiveStyle = useCallback(
+    (layerId: EditableLayerId): CSSProperties => {
+      const baseStyle =
+        gesturingLayerId === layerId
+          ? baseTransformOriginStyle
+          : {
+              ...baseTransformOriginStyle,
+              transform: getBaseLayerTransform(
+                stageSize.width,
+                stageSize.height,
+                layerTransforms[layerId],
+              ),
+            };
 
-    return editable ? { ...baseStyle, ...touchCalloutStyle } : baseStyle;
-  };
+      return editable ? { ...baseStyle, ...touchCalloutStyle } : baseStyle;
+    },
+    [editable, gesturingLayerId, layerTransforms, stageSize],
+  );
 
   return {
     stageRef,

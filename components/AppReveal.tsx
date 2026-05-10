@@ -12,6 +12,7 @@ import {
   DEFAULT_GRAY_RGB,
   TOTAL_DURATION_MS,
   WHITE_RGB,
+  blendRgb,
   buildMaskImage,
   buildSurfaceSweep,
   clamp,
@@ -139,6 +140,13 @@ export function AppReveal({
     () => parseHexColor(grayColor, DEFAULT_GRAY_RGB),
     [grayColor],
   );
+  const surfaceGrays = useMemo(
+    () => ({
+      brightGray: blendRgb(grayRgb, WHITE_RGB, 0.24),
+      deepGray: blendRgb(grayRgb, { r: 0, g: 0, b: 0 }, 0.14),
+    }),
+    [grayRgb],
+  );
   const restartKey = `${normalizedDuration}:${normalizedPlaybackRate}:${restartToken}`;
 
   const timeline = useTimeline(
@@ -161,7 +169,7 @@ export function AppReveal({
 
   const maskImage = useTransform(iconRevealProgress, buildMaskImage);
   const surfaceSweepImage = useTransform(revealProgress, (value: number) =>
-    buildSurfaceSweep(value, grayRgb),
+    buildSurfaceSweep(value, grayRgb, surfaceGrays),
   );
   const surfaceSweepOpacity = useTransform(
     revealProgress,

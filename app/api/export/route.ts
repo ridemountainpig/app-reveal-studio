@@ -1,9 +1,12 @@
+import type { ChildProcess } from "node:child_process";
+
 import { NextResponse } from "next/server";
-import type { Browser, Page } from "puppeteer";
+import type { Browser } from "puppeteer";
 
 import {
   EXPORT_PAYLOAD_STORAGE_KEY,
   MAX_EXPORT_PAYLOAD_BYTES,
+  EXPORT_SETTINGS,
 } from "@/constants/exportSettings";
 import { logger, serializeError } from "@/lib/logger";
 import {
@@ -38,9 +41,21 @@ const ALLOWED_PARAMS = [
 
 const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
 const BROWSER_TIMEOUT = 480000; // 8 minutes
+const BROWSER_LAUNCH_TIMEOUT = 60000; // 1 minute
+const BROWSER_CLOSE_TIMEOUT = 10000; // 10 seconds
+const BROWSER_IO_TIMEOUT = 120000; // 2 minutes
 const PAGE_LOAD_TIMEOUT = 60000; // 1 minute
 const MAX_CONCURRENT_EXPORTS = 1;
 const BYTES_PER_MB = 1024 * 1024;
+const PARALLEL_CAPTURE_SEGMENTS = (() => {
+  const parsed = parseInt(process.env.PARALLEL_CAPTURE_SEGMENTS ?? "", 10);
+  return !isNaN(parsed) && parsed > 0 ? parsed : 3;
+})();
+const CAPTURE_BROWSER_CONCURRENCY = (() => {
+  const parsed = parseInt(process.env.CAPTURE_BROWSER_CONCURRENCY ?? "", 10);
+  return !isNaN(parsed) && parsed > 0 ? parsed : 1;
+})();
+const ENCODE_FRAME_CHUNK_SIZE = 20;
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,8 +78,37 @@ function throwIfAborted(signal?: AbortSignal) {
   }
 }
 
-let browserPromise: Promise<Awaited<ReturnType<typeof getBrowser>>> | null =
-  null;
+function buildSegments(
+  frameTotal: number,
+  count: number,
+): { start: number; end: number }[] {
+  const segSize = Math.ceil(frameTotal / count);
+  const segments: { start: number; end: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const start = i * segSize;
+    const end = Math.min(start + segSize - 1, frameTotal - 1);
+    if (start <= end) segments.push({ start, end });
+  }
+  return segments;
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 let activeExportCount = 0;
 type QueueEntry = {
   clientId: string;
@@ -74,9 +118,9 @@ type QueueEntry = {
 const exportQueue: QueueEntry[] = [];
 const activeExportClientIds = new Set<string>();
 
-async function getBrowser() {
+async function launchBrowser(): Promise<Browser> {
   const puppeteer = await import("puppeteer");
-  return puppeteer.default.launch({
+  const launchPromise = puppeteer.default.launch({
     headless: true,
     args: [
       "--disable-web-security",
@@ -87,24 +131,48 @@ async function getBrowser() {
       "--hide-scrollbars",
     ],
   });
+  // Always attach a handler so a late rejection (after withTimeout has
+  // already settled via the timeout branch) cannot become unhandled.
+  launchPromise.catch(() => {});
+
+  try {
+    return await withTimeout(
+      launchPromise,
+      BROWSER_LAUNCH_TIMEOUT,
+      "Browser launch timed out.",
+    );
+  } catch (err) {
+    launchPromise.then((browser) => closeBrowser(browser)).catch(() => {});
+    throw err;
+  }
 }
 
-async function getSharedBrowser() {
-  if (!browserPromise) {
-    browserPromise = getBrowser()
-      .then((browser) => {
-        browser.on("disconnected", () => {
-          browserPromise = null;
-        });
-        return browser;
-      })
-      .catch((error) => {
-        browserPromise = null;
-        throw error;
-      });
-  }
+function getBrowserProcess(browser: Browser): ChildProcess | undefined {
+  const maybeBrowserWithProcess = browser as Browser & {
+    process?: () => ChildProcess | null;
+  };
+  return maybeBrowserWithProcess.process?.() ?? undefined;
+}
 
-  return browserPromise;
+async function closeBrowser(browser: Browser) {
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  const closePromise = browser
+    .close()
+    .then(() => "closed" as const)
+    .catch(() => "failed" as const);
+  const closeTimeout = new Promise<"timeout">((resolve) => {
+    closeTimer = setTimeout(() => resolve("timeout"), BROWSER_CLOSE_TIMEOUT);
+  });
+
+  try {
+    const result = await Promise.race([closePromise, closeTimeout]);
+
+    if (result !== "closed") {
+      getBrowserProcess(browser)?.kill("SIGKILL");
+    }
+  } finally {
+    if (closeTimer) clearTimeout(closeTimer);
+  }
 }
 
 async function acquireExportSlot(clientId: string, signal?: AbortSignal) {
@@ -120,21 +188,13 @@ async function acquireExportSlot(clientId: string, signal?: AbortSignal) {
     let isResolved = false;
 
     const cleanup = () => {
-      if (signal) {
-        signal.removeEventListener("abort", onAbort);
-      }
-
-      const queueIndex = exportQueue.indexOf(entry);
-      if (queueIndex !== -1) {
-        exportQueue.splice(queueIndex, 1);
-      }
+      if (signal) signal.removeEventListener("abort", onAbort);
+      const idx = exportQueue.indexOf(entry);
+      if (idx !== -1) exportQueue.splice(idx, 1);
     };
 
     const onAbort = () => {
-      if (isResolved) {
-        return;
-      }
-
+      if (isResolved) return;
       cleanup();
       reject(createAbortError());
     };
@@ -148,11 +208,7 @@ async function acquireExportSlot(clientId: string, signal?: AbortSignal) {
     };
 
     const entry: QueueEntry = { clientId, grant, cleanup };
-
-    if (signal) {
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
     exportQueue.push(entry);
   });
 }
@@ -160,17 +216,234 @@ async function acquireExportSlot(clientId: string, signal?: AbortSignal) {
 function releaseExportSlot(clientId: string) {
   activeExportClientIds.delete(clientId);
   activeExportCount = Math.max(0, activeExportCount - 1);
-  const nextExport = exportQueue.shift();
-  if (nextExport) {
-    nextExport.grant();
-  }
+  const next = exportQueue.shift();
+  if (next) next.grant();
 }
 
 function validateRequestBody(body: unknown): body is Record<string, unknown> {
-  if (!body || typeof body !== "object") {
-    return false;
+  return !!body && typeof body === "object";
+}
+
+async function runCaptureSegment(
+  renderBaseUrl: string,
+  exportPayload: Record<string, string>,
+  segment: { start: number; end: number },
+  frameTotal: number,
+  signal: AbortSignal,
+  onPageError: (err: unknown) => void,
+): Promise<string[]> {
+  throwIfAborted(signal);
+  const browser = await launchBrowser();
+  const onAbort = () => void closeBrowser(browser).catch(() => {});
+  signal.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    const page = await withTimeout(
+      browser.newPage(),
+      BROWSER_IO_TIMEOUT,
+      "Browser page creation timed out.",
+    );
+    await page.setViewport({ width: 1080, height: 1920 });
+    page.on("pageerror", onPageError);
+
+    await withTimeout(
+      page.evaluateOnNewDocument(
+        ({ storageKey, payload }) => {
+          window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
+        },
+        { storageKey: EXPORT_PAYLOAD_STORAGE_KEY, payload: exportPayload },
+      ),
+      BROWSER_IO_TIMEOUT,
+      "Capture payload transfer timed out.",
+    );
+
+    const captureUrl =
+      `${renderBaseUrl}?renderMode=captureSegment` +
+      `&frameStart=${segment.start}&frameEnd=${segment.end}&frameTotal=${frameTotal}`;
+
+    await page.goto(captureUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+    throwIfAborted(signal);
+
+    await page.waitForFunction("window.__CAPTURE_DONE__ === true", {
+      timeout: BROWSER_TIMEOUT,
+    });
+    throwIfAborted(signal);
+
+    const errorMsg = await page.evaluate(
+      () =>
+        (window as unknown as { __CAPTURE_ERROR__?: string }).__CAPTURE_ERROR__,
+    );
+    if (errorMsg) throw new Error(errorMsg);
+
+    const frames = await withTimeout(
+      page.evaluate(
+        () =>
+          (window as unknown as { __CAPTURE_FRAMES__?: string[] })
+            .__CAPTURE_FRAMES__,
+      ),
+      BROWSER_IO_TIMEOUT,
+      "Capture frame transfer timed out.",
+    );
+    if (!frames?.length) throw new Error("Capture segment returned no frames.");
+
+    return frames;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    await closeBrowser(browser).catch(() => {});
   }
-  return true;
+}
+
+async function runEncodeFrames(
+  renderBaseUrl: string,
+  allFrames: string[],
+  signal: AbortSignal,
+  onPageError: (err: unknown) => void,
+): Promise<string> {
+  throwIfAborted(signal);
+  const browser = await launchBrowser();
+  const onAbort = () => void closeBrowser(browser).catch(() => {});
+  signal.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    const page = await withTimeout(
+      browser.newPage(),
+      BROWSER_IO_TIMEOUT,
+      "Browser page creation timed out.",
+    );
+    await page.setViewport({ width: 1080, height: 1920 });
+    page.on("pageerror", onPageError);
+
+    await withTimeout(
+      page.evaluateOnNewDocument(() => {
+        (
+          window as unknown as {
+            __ENCODE_INPUT__: { frames: string[]; ready: boolean };
+          }
+        ).__ENCODE_INPUT__ = { frames: [], ready: false };
+      }),
+      BROWSER_IO_TIMEOUT,
+      "Encode init script timed out.",
+    );
+
+    await page.goto(`${renderBaseUrl}?renderMode=encodeFrames`, {
+      waitUntil: "domcontentloaded",
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+    throwIfAborted(signal);
+
+    for (let i = 0; i < allFrames.length; i += ENCODE_FRAME_CHUNK_SIZE) {
+      throwIfAborted(signal);
+      const chunk = allFrames.slice(i, i + ENCODE_FRAME_CHUNK_SIZE);
+      await withTimeout(
+        page.evaluate((frames: string[]) => {
+          const input = (
+            window as unknown as {
+              __ENCODE_INPUT__?: { frames: string[]; ready: boolean };
+            }
+          ).__ENCODE_INPUT__;
+          if (input) input.frames.push(...frames);
+        }, chunk),
+        BROWSER_IO_TIMEOUT,
+        "Encode frame transfer timed out.",
+      );
+    }
+    await withTimeout(
+      page.evaluate(() => {
+        const input = (
+          window as unknown as {
+            __ENCODE_INPUT__?: { frames: string[]; ready: boolean };
+          }
+        ).__ENCODE_INPUT__;
+        if (input) input.ready = true;
+      }),
+      BROWSER_IO_TIMEOUT,
+      "Encode ready signal timed out.",
+    );
+    throwIfAborted(signal);
+
+    await page.waitForFunction("window.__EXPORT_DONE__ === true", {
+      timeout: BROWSER_TIMEOUT,
+    });
+    throwIfAborted(signal);
+
+    const errorMsg = await page.evaluate(
+      () =>
+        (window as unknown as { __EXPORT_ERROR__?: string }).__EXPORT_ERROR__,
+    );
+    if (errorMsg) throw new Error(errorMsg);
+
+    const videoBase64 = await withTimeout(
+      page.evaluate(
+        () =>
+          (window as unknown as { __EXPORT_RESULT_BASE64__?: string })
+            .__EXPORT_RESULT_BASE64__,
+      ),
+      BROWSER_IO_TIMEOUT,
+      "Export result transfer timed out.",
+    );
+    if (!videoBase64) throw new Error("Export result missing.");
+
+    return videoBase64;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    await closeBrowser(browser).catch(() => {});
+  }
+}
+
+async function runCaptureSegments(
+  renderBaseUrl: string,
+  exportPayload: Record<string, string>,
+  segments: { start: number; end: number }[],
+  frameTotal: number,
+  controller: AbortController,
+  onPageError: (err: unknown) => void,
+): Promise<string[]> {
+  const signal = controller.signal;
+  const frameArrays: string[][] = new Array(segments.length);
+  let nextSegmentIndex = 0;
+  const workerCount = Math.min(CAPTURE_BROWSER_CONCURRENCY, segments.length);
+  let firstError: unknown;
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (!signal.aborted) {
+      const segmentIndex = nextSegmentIndex;
+      nextSegmentIndex += 1;
+
+      const segment = segments[segmentIndex];
+      if (!segment) return;
+
+      try {
+        frameArrays[segmentIndex] = await runCaptureSegment(
+          renderBaseUrl,
+          exportPayload,
+          segment,
+          frameTotal,
+          signal,
+          onPageError,
+        );
+      } catch (err) {
+        if (firstError === undefined) firstError = err;
+        controller.abort();
+        throw err;
+      }
+    }
+  });
+
+  const results = await Promise.allSettled(workers);
+  const rejected = results.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (rejected.length > 0) {
+    for (const r of rejected) {
+      if (r.reason !== firstError) onPageError(r.reason);
+    }
+    throw firstError ?? rejected[0].reason;
+  }
+
+  return frameArrays.flat();
 }
 
 export async function GET(request: Request) {
@@ -205,24 +478,19 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let browser: Browser | undefined;
-  let page: Page | undefined;
   let hasSlot = false;
   let clientIdForSlot: string | undefined;
   let slotAcquiredAt: number | undefined;
   let queueWaitSeconds: number | undefined;
-  let removeAbortListener: (() => void) | undefined;
   let quotaConsumedIp: string | undefined;
   let quotaConsumedDate: string | undefined;
+  let captureStarted = false;
+  const quotaConfig = getExportQuotaConfig();
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
-  const routeLogger = logger.child({
-    scope: "video-export",
-    requestId,
-  });
+  const routeLogger = logger.child({ scope: "video-export", requestId });
 
   try {
-    const quotaConfig = getExportQuotaConfig();
     const contentLength = request.headers.get("content-length");
 
     if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
@@ -232,7 +500,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
     if (!validateRequestBody(body)) {
       return NextResponse.json(
@@ -317,7 +590,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const quotaStatus = await consumeDailyExportQuota(clientIp);
+      const quotaStatus = await consumeDailyExportQuota(clientIp, quotaConfig);
       if (!quotaStatus.allowed) {
         routeLogger.warn({
           event: "quota.blocked",
@@ -353,22 +626,34 @@ export async function POST(request: Request) {
       });
     }
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ??
-      (() => {
-        const host =
-          request.headers.get("x-forwarded-host") ??
-          request.headers.get("host") ??
-          "localhost:3000";
-        const protocol = request.headers.get("x-forwarded-proto") ?? "http";
-        return `${protocol}://${host}`;
-      })();
-    const renderUrl = `${baseUrl}/render?renderMode=export`;
+    const renderBaseUrl = (() => {
+      if (process.env.NEXT_PUBLIC_APP_URL) {
+        return `${process.env.NEXT_PUBLIC_APP_URL}/render`;
+      }
+      if (process.env.NODE_ENV !== "development") {
+        throw new Error(
+          "NEXT_PUBLIC_APP_URL must be set in non-development environments.",
+        );
+      }
+      return "http://localhost:3000/render";
+    })();
+
+    const durationMs = Number(exportPayload.durationMs || "0") || 3000;
+    const frameTotal = Math.max(
+      1,
+      Math.ceil((durationMs / 1000) * EXPORT_SETTINGS.FRAME_RATE),
+    );
+    const segments = buildSegments(frameTotal, PARALLEL_CAPTURE_SEGMENTS);
+
     routeLogger.info({
       event: "render.started",
-      durationSeconds: exportPayload.durationMs
-        ? msToSeconds(Number(exportPayload.durationMs))
-        : null,
+      durationSeconds: msToSeconds(durationMs),
+      frameTotal,
+      segments: segments.length,
+      captureConcurrency: Math.min(
+        CAPTURE_BROWSER_CONCURRENCY,
+        segments.length,
+      ),
     });
 
     const beforeSlotAcquire = Date.now();
@@ -377,79 +662,72 @@ export async function POST(request: Request) {
     queueWaitSeconds = msToSeconds(slotAcquiredAt - beforeSlotAcquire);
     hasSlot = true;
 
-    const onAbort = () => {
-      void page?.close().catch(() => {});
-    };
-    request.signal.addEventListener("abort", onAbort, { once: true });
-    removeAbortListener = () => {
-      request.signal.removeEventListener("abort", onAbort);
-    };
     throwIfAborted(request.signal);
 
-    browser = await getSharedBrowser();
-    throwIfAborted(request.signal);
-    page = await browser.newPage();
-    throwIfAborted(request.signal);
-    await page.setViewport({ width: 1080, height: 1920 });
-    page.on("pageerror", (error) => {
-      routeLogger.error({
-        event: "render.pageerror",
-        error: serializeError(error),
-      });
-    });
+    // Phase 1: segmented capture. Each segment uses its own browser process.
+    const captureStartedAt = Date.now();
+    captureStarted = true;
+    const segmentController = new AbortController();
+    const onRequestAbort = () => segmentController.abort();
+    request.signal.addEventListener("abort", onRequestAbort, { once: true });
 
-    await page.evaluateOnNewDocument(
-      ({ storageKey, payload }) => {
-        window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
-      },
-      { storageKey: EXPORT_PAYLOAD_STORAGE_KEY, payload: exportPayload },
-    );
-
-    await page.goto(renderUrl, {
-      waitUntil: "domcontentloaded",
-      timeout: PAGE_LOAD_TIMEOUT,
-    });
-    throwIfAborted(request.signal);
-
-    await page.waitForFunction("window.__EXPORT_DONE__ === true", {
-      timeout: BROWSER_TIMEOUT,
-    });
-    throwIfAborted(request.signal);
-
-    const errorMsg = await page.evaluate(
-      () =>
-        (window as unknown as { __EXPORT_ERROR__?: string }).__EXPORT_ERROR__,
-    );
-    if (errorMsg) {
-      const now = Date.now();
-      routeLogger.error({
-        event: "render.failed.in_page",
-        errorMessage: errorMsg,
-        elapsedSeconds: msToSeconds(now - startedAt),
-        ...(queueWaitSeconds !== undefined ? { queueWaitSeconds } : {}),
-        ...(slotAcquiredAt !== undefined
-          ? { renderSeconds: msToSeconds(now - slotAcquiredAt) }
-          : {}),
-      });
-      if (quotaConsumedIp) {
-        await releaseExportQuota(quotaConsumedIp, quotaConsumedDate!).catch(
-          () => {},
-        );
-        quotaConsumedIp = undefined;
-      }
-      return NextResponse.json({ error: errorMsg }, { status: 500 });
+    let allFrames: string[] = [];
+    try {
+      allFrames = await runCaptureSegments(
+        renderBaseUrl,
+        exportPayload,
+        segments,
+        frameTotal,
+        segmentController,
+        (err) =>
+          routeLogger.error({
+            event: "render.pageerror",
+            phase: "capture",
+            error: serializeError(
+              err instanceof Error ? err : new Error(String(err)),
+            ),
+          }),
+      );
+    } catch (err) {
+      segmentController.abort();
+      throw err;
+    } finally {
+      request.signal.removeEventListener("abort", onRequestAbort);
     }
 
-    const videoBase64 = await page.evaluate(
-      () =>
-        (window as unknown as { __EXPORT_RESULT_BASE64__?: string })
-          .__EXPORT_RESULT_BASE64__,
-    );
+    if (!allFrames.length) {
+      throw new Error("Capture returned no frames.");
+    }
+
+    routeLogger.info({
+      event: "render.capture_done",
+      captureSeconds: msToSeconds(Date.now() - captureStartedAt),
+      totalFrames: allFrames.length,
+    });
+
     throwIfAborted(request.signal);
 
-    if (!videoBase64) {
-      throw new Error("Export result missing.");
-    }
+    // Phase 2: encode — runEncodeFrames manages its own browser lifecycle
+    const encodeStartedAt = Date.now();
+    const videoBase64 = await runEncodeFrames(
+      renderBaseUrl,
+      allFrames,
+      request.signal,
+      (err) =>
+        routeLogger.error({
+          event: "render.pageerror",
+          phase: "encode",
+          error: serializeError(
+            err instanceof Error ? err : new Error(String(err)),
+          ),
+        }),
+    );
+    allFrames.length = 0;
+
+    routeLogger.info({
+      event: "render.encode_done",
+      encodeSeconds: msToSeconds(Date.now() - encodeStartedAt),
+    });
 
     const videoBuffer = Buffer.from(videoBase64, "base64");
     const now = Date.now();
@@ -477,14 +755,13 @@ export async function POST(request: Request) {
     const wasAborted =
       request.signal.aborted || message === "Export request aborted.";
 
-    // Provide more specific error messages
     let statusCode = 500;
     let errorMessage = message;
 
     if (wasAborted) {
       statusCode = 499;
       errorMessage = "Export request cancelled.";
-    } else if (message.includes("Timeout")) {
+    } else if (message.includes("Timeout") || message.includes("timed out")) {
       statusCode = 504;
       errorMessage =
         "Video generation timed out. Please try with shorter duration.";
@@ -494,10 +771,17 @@ export async function POST(request: Request) {
     }
 
     if (statusCode === 499) {
-      if (quotaConsumedIp && !hasSlot) {
-        await releaseExportQuota(quotaConsumedIp, quotaConsumedDate!).catch(
-          () => {},
-        );
+      if (quotaConsumedIp && !captureStarted) {
+        await releaseExportQuota(
+          quotaConsumedIp,
+          quotaConsumedDate!,
+          quotaConfig,
+        ).catch((err) => {
+          routeLogger.warn({
+            event: "quota.release_failed",
+            error: serializeError(err),
+          });
+        });
         quotaConsumedIp = undefined;
       }
 
@@ -515,9 +799,16 @@ export async function POST(request: Request) {
     }
 
     if (quotaConsumedIp) {
-      await releaseExportQuota(quotaConsumedIp, quotaConsumedDate!).catch(
-        () => {},
-      );
+      await releaseExportQuota(
+        quotaConsumedIp,
+        quotaConsumedDate!,
+        quotaConfig,
+      ).catch((err) => {
+        routeLogger.warn({
+          event: "quota.release_failed",
+          error: serializeError(err),
+        });
+      });
       quotaConsumedIp = undefined;
     }
 
@@ -535,10 +826,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: errorMessage }, { status: statusCode });
   } finally {
-    removeAbortListener?.();
-    if (page) {
-      await page.close().catch(() => {});
-    }
     if (hasSlot && clientIdForSlot) {
       releaseExportSlot(clientIdForSlot);
     }
