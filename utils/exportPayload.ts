@@ -53,7 +53,11 @@ export function appendClientIdToPayloadJson(
   clientId: string,
   options?: { turnstileToken?: string },
 ): string {
-  if (serializedPayload.length <= 1 || !serializedPayload.startsWith("{")) {
+  if (
+    serializedPayload.length <= 1 ||
+    !serializedPayload.startsWith("{") ||
+    !serializedPayload.endsWith("}")
+  ) {
     const base: Record<string, string> = { clientId };
     if (options?.turnstileToken) {
       base.turnstileToken = options.turnstileToken;

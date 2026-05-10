@@ -55,6 +55,7 @@ const CAPTURE_BROWSER_CONCURRENCY = (() => {
   const parsed = parseInt(process.env.CAPTURE_BROWSER_CONCURRENCY ?? "", 10);
   return !isNaN(parsed) && parsed > 0 ? parsed : 1;
 })();
+const ENCODE_FRAME_CHUNK_SIZE = 20;
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -130,6 +131,9 @@ async function launchBrowser(): Promise<Browser> {
       "--hide-scrollbars",
     ],
   });
+  // Always attach a handler so a late rejection (after withTimeout has
+  // already settled via the timeout branch) cannot become unhandled.
+  launchPromise.catch(() => {});
 
   try {
     return await withTimeout(
@@ -284,13 +288,6 @@ async function runCaptureSegment(
       "Capture frame transfer timed out.",
     );
     if (!frames?.length) throw new Error("Capture segment returned no frames.");
-    await page
-      .evaluate(() => {
-        (
-          window as unknown as { __CAPTURE_FRAMES__?: string[] }
-        ).__CAPTURE_FRAMES__ = undefined;
-      })
-      .catch(() => {});
 
     return frames;
   } finally {
@@ -320,22 +317,51 @@ async function runEncodeFrames(
     page.on("pageerror", onPageError);
 
     await withTimeout(
-      page.evaluateOnNewDocument(
-        ({ frames }) => {
-          (
-            window as unknown as { __ENCODE_INPUT__: { frames: string[] } }
-          ).__ENCODE_INPUT__ = { frames };
-        },
-        { frames: allFrames },
-      ),
+      page.evaluateOnNewDocument(() => {
+        (
+          window as unknown as {
+            __ENCODE_INPUT__: { frames: string[]; ready: boolean };
+          }
+        ).__ENCODE_INPUT__ = { frames: [], ready: false };
+      }),
       BROWSER_IO_TIMEOUT,
-      "Encode frame transfer timed out.",
+      "Encode init script timed out.",
     );
 
     await page.goto(`${renderBaseUrl}?renderMode=encodeFrames`, {
       waitUntil: "domcontentloaded",
       timeout: PAGE_LOAD_TIMEOUT,
     });
+    throwIfAborted(signal);
+
+    for (let i = 0; i < allFrames.length; i += ENCODE_FRAME_CHUNK_SIZE) {
+      throwIfAborted(signal);
+      const chunk = allFrames.slice(i, i + ENCODE_FRAME_CHUNK_SIZE);
+      await withTimeout(
+        page.evaluate((frames: string[]) => {
+          const input = (
+            window as unknown as {
+              __ENCODE_INPUT__?: { frames: string[]; ready: boolean };
+            }
+          ).__ENCODE_INPUT__;
+          if (input) input.frames.push(...frames);
+        }, chunk),
+        BROWSER_IO_TIMEOUT,
+        "Encode frame transfer timed out.",
+      );
+    }
+    await withTimeout(
+      page.evaluate(() => {
+        const input = (
+          window as unknown as {
+            __ENCODE_INPUT__?: { frames: string[]; ready: boolean };
+          }
+        ).__ENCODE_INPUT__;
+        if (input) input.ready = true;
+      }),
+      BROWSER_IO_TIMEOUT,
+      "Encode ready signal timed out.",
+    );
     throwIfAborted(signal);
 
     await page.waitForFunction("window.__EXPORT_DONE__ === true", {
@@ -359,22 +385,6 @@ async function runEncodeFrames(
       "Export result transfer timed out.",
     );
     if (!videoBase64) throw new Error("Export result missing.");
-    await page
-      .evaluate(() => {
-        (
-          window as unknown as {
-            __ENCODE_INPUT__?: { frames: string[] };
-            __EXPORT_RESULT_BASE64__?: string;
-          }
-        ).__ENCODE_INPUT__ = undefined;
-        (
-          window as unknown as {
-            __ENCODE_INPUT__?: { frames: string[] };
-            __EXPORT_RESULT_BASE64__?: string;
-          }
-        ).__EXPORT_RESULT_BASE64__ = undefined;
-      })
-      .catch(() => {});
 
     return videoBase64;
   } finally {
@@ -395,6 +405,7 @@ async function runCaptureSegments(
   const frameArrays: string[][] = new Array(segments.length);
   let nextSegmentIndex = 0;
   const workerCount = Math.min(CAPTURE_BROWSER_CONCURRENCY, segments.length);
+  let firstError: unknown;
 
   const workers = Array.from({ length: workerCount }, async () => {
     while (!signal.aborted) {
@@ -414,6 +425,7 @@ async function runCaptureSegments(
           onPageError,
         );
       } catch (err) {
+        if (firstError === undefined) firstError = err;
         controller.abort();
         throw err;
       }
@@ -421,11 +433,14 @@ async function runCaptureSegments(
   });
 
   const results = await Promise.allSettled(workers);
-  const failedCapture = results.find(
+  const rejected = results.filter(
     (result): result is PromiseRejectedResult => result.status === "rejected",
   );
-  if (failedCapture) {
-    throw failedCapture.reason;
+  if (rejected.length > 0) {
+    for (const r of rejected) {
+      if (r.reason !== firstError) onPageError(r.reason);
+    }
+    throw firstError ?? rejected[0].reason;
   }
 
   return frameArrays.flat();
@@ -469,6 +484,7 @@ export async function POST(request: Request) {
   let queueWaitSeconds: number | undefined;
   let quotaConsumedIp: string | undefined;
   let quotaConsumedDate: string | undefined;
+  let captureStarted = false;
   const quotaConfig = getExportQuotaConfig();
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
@@ -484,7 +500,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
     if (!validateRequestBody(body)) {
       return NextResponse.json(
@@ -645,6 +666,7 @@ export async function POST(request: Request) {
 
     // Phase 1: segmented capture. Each segment uses its own browser process.
     const captureStartedAt = Date.now();
+    captureStarted = true;
     const segmentController = new AbortController();
     const onRequestAbort = () => segmentController.abort();
     request.signal.addEventListener("abort", onRequestAbort, { once: true });
@@ -749,7 +771,7 @@ export async function POST(request: Request) {
     }
 
     if (statusCode === 499) {
-      if (quotaConsumedIp) {
+      if (quotaConsumedIp && !captureStarted) {
         await releaseExportQuota(
           quotaConsumedIp,
           quotaConsumedDate!,

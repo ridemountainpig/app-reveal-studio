@@ -260,7 +260,7 @@ export async function captureFrameSegment(
     ctx.fillRect(0, 0, EXPORT_SETTINGS.WIDTH, EXPORT_SETTINGS.HEIGHT);
     ctx.drawImage(frameCanvas, offsetX, offsetY, drawW, drawH);
 
-    jpegFrames.push(compositeCanvas.toDataURL("image/jpeg", 0.9));
+    jpegFrames.push(compositeCanvas.toDataURL("image/jpeg", 0.95));
     frameCanvas.width = 0;
     frameCanvas.height = 0;
   }
@@ -326,8 +326,17 @@ export async function encodeFromJpegFrames(
   for (let i = 0; i < frames.length; i++) {
     const img = new Image();
     await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error(`Failed to load frame ${i}`));
+      const timer = setTimeout(() => {
+        reject(new Error(`Frame ${i} load timed out.`));
+      }, EXPORT_SETTINGS.IMAGE_LOAD_TIMEOUT_MS);
+      img.onload = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      img.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error(`Failed to load frame ${i}`));
+      };
       img.src = frames[i];
     });
 

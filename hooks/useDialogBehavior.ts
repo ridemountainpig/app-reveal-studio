@@ -3,6 +3,9 @@
 import { useEffect } from "react";
 import type { RefObject } from "react";
 
+let dialogOpenCount = 0;
+let savedBodyOverflow: string | null = null;
+
 export function useDialogBehavior(
   open: boolean,
   onClose: () => void,
@@ -53,10 +56,18 @@ export function useDialogBehavior(
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    if (dialogOpenCount === 0) {
+      savedBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    dialogOpenCount += 1;
     return () => {
-      document.body.style.overflow = previousOverflow;
+      dialogOpenCount -= 1;
+      if (dialogOpenCount <= 0) {
+        dialogOpenCount = 0;
+        document.body.style.overflow = savedBodyOverflow ?? "";
+        savedBodyOverflow = null;
+      }
     };
   }, [open]);
 }

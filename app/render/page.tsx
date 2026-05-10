@@ -21,7 +21,7 @@ declare global {
     __CAPTURE_DONE__?: boolean;
     __CAPTURE_FRAMES__?: string[];
     __CAPTURE_ERROR__?: string;
-    __ENCODE_INPUT__?: { frames: string[] };
+    __ENCODE_INPUT__?: { frames: string[]; ready: boolean };
   }
 }
 
@@ -70,16 +70,9 @@ function RenderPageInner() {
 
 function EncodeFramesInner() {
   useEffect(() => {
-    const input = window.__ENCODE_INPUT__;
-
-    if (!input?.frames?.length) {
-      window.__EXPORT_ERROR__ = "Encode input not found.";
-      window.__EXPORT_DONE__ = true;
-      return;
-    }
-
     void (async () => {
       try {
+        const input = await waitForEncodeInput();
         const { encodeFromJpegFrames } = await import("../../lib/exportVideo");
         const buffer = await encodeFromJpegFrames(input.frames);
         window.__ENCODE_INPUT__ = undefined;
@@ -95,6 +88,22 @@ function EncodeFramesInner() {
   }, []);
 
   return null;
+}
+
+const ENCODE_INPUT_WAIT_TIMEOUT_MS = 5 * 60 * 1000;
+const ENCODE_INPUT_POLL_INTERVAL_MS = 100;
+
+async function waitForEncodeInput(): Promise<{ frames: string[] }> {
+  const deadline = Date.now() + ENCODE_INPUT_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const input = window.__ENCODE_INPUT__;
+    if (input?.ready) {
+      if (!input.frames.length) throw new Error("Encode input is empty.");
+      return { frames: input.frames };
+    }
+    await new Promise((r) => setTimeout(r, ENCODE_INPUT_POLL_INTERVAL_MS));
+  }
+  throw new Error("Encode input not received.");
 }
 
 function CaptureInner() {
@@ -168,6 +177,10 @@ function CaptureInner() {
     if (hasStarted.current) return;
     hasStarted.current = true;
 
+    const frameStartRaw = searchParams.get("frameStart");
+    const frameEndRaw = searchParams.get("frameEnd");
+    const frameTotalRaw = searchParams.get("frameTotal");
+
     const timer = setTimeout(async () => {
       const node = captureRef.current;
       if (!node) {
@@ -186,9 +199,9 @@ function CaptureInner() {
         const timelineControl = timelineRef.current;
 
         if (renderMode === "captureSegment") {
-          const frameStart = Number(searchParams.get("frameStart"));
-          const frameEnd = Number(searchParams.get("frameEnd"));
-          const frameTotal = Number(searchParams.get("frameTotal"));
+          const frameStart = Number(frameStartRaw);
+          const frameEnd = Number(frameEndRaw);
+          const frameTotal = Number(frameTotalRaw);
 
           if (
             !Number.isInteger(frameStart) ||
@@ -199,7 +212,7 @@ function CaptureInner() {
             frameTotal < frameEnd + 1
           ) {
             throw new Error(
-              `Invalid capture segment params: frameStart=${searchParams.get("frameStart")}, frameEnd=${searchParams.get("frameEnd")}, frameTotal=${searchParams.get("frameTotal")}`,
+              `Invalid capture segment params: frameStart=${frameStartRaw}, frameEnd=${frameEndRaw}, frameTotal=${frameTotalRaw}`,
             );
           }
 
